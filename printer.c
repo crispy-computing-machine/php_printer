@@ -278,27 +278,72 @@ ZEND_FUNCTION(printer_open)
     resource->dmModifiedFields = 0;
 
     if (printer_name) {
-        resource->name = printer_name;
+        resource->name = estrdup(printer_name); // Duplicate to manage memory
     } else {
-        resource->name = PRINTERG(default_printer);
+        resource->name = PRINTERG(default_printer) ? estrdup(PRINTERG(default_printer)) : NULL;
     }
 
-    if (OpenPrinterA(resource->name, &resource->handle, NULL)) {
-        resource->pi2 = emalloc(sizeof(PRINTER_INFO_2));
-        resource->pi2->pDevMode = emalloc(DocumentPropertiesA(NULL, NULL, resource->name, NULL, NULL, 0));
-        if (DocumentPropertiesA(NULL, resource->handle, resource->name, resource->pi2->pDevMode, NULL, DM_OUT_BUFFER) == IDOK) {
-            resource->spooler_info.pDocName = estrdup("PHP generated Document");
-            resource->spooler_info.pOutputFile = NULL;
-            resource->spooler_info.pDatatype = estrdup("TEXT");
-            // Remove fwType and cbSize as they don't exist in DOC_INFO_1
-            resource->dc = CreateDCA(NULL, resource->name, NULL, resource->pi2->pDevMode);
-            RETURN_RES(zend_register_resource(resource, le_printer));
-        }
+    if (!resource->name) {
+        php_error_docref(NULL, E_WARNING, "No printer name provided and no default printer set");
+        efree(resource);
+        RETURN_FALSE;
     }
 
-    php_error_docref(NULL, E_WARNING, "couldn't connect to the printer [%s]", resource->name);
-    efree(resource);
-    RETURN_FALSE;
+    php_error_docref(NULL, E_NOTICE, "Attempting to open printer: %s", resource->name);
+
+    if (!OpenPrinterA(resource->name, &resource->handle, NULL)) {
+        php_error_docref(NULL, E_WARNING, "OpenPrinterA failed for [%s]: %d", resource->name, GetLastError());
+        efree(resource->name);
+        efree(resource);
+        RETURN_FALSE;
+    }
+
+    resource->pi2 = emalloc(sizeof(PRINTER_INFO_2));
+    LONG devmode_size = DocumentPropertiesA(NULL, NULL, resource->name, NULL, NULL, 0);
+    if (devmode_size <= 0) {
+        php_error_docref(NULL, E_WARNING, "DocumentPropertiesA (size query) failed for [%s]: %d", resource->name, GetLastError());
+        efree(resource->pi2);
+        ClosePrinter(resource->handle);
+        efree(resource->name);
+        efree(resource);
+        RETURN_FALSE;
+    }
+
+    resource->pi2->pDevMode = emalloc(devmode_size);
+    if (DocumentPropertiesA(NULL, resource->handle, resource->name, resource->pi2->pDevMode, NULL, DM_OUT_BUFFER) != IDOK) {
+        php_error_docref(NULL, E_WARNING, "DocumentPropertiesA failed for [%s]: %d", resource->name, GetLastError());
+        efree(resource->pi2->pDevMode);
+        efree(resource->pi2);
+        ClosePrinter(resource->handle);
+        efree(resource->name);
+        efree(resource);
+        RETURN_FALSE;
+    }
+
+    resource->spooler_info.pDocName = estrdup("PHP generated Document");
+    resource->spooler_info.pOutputFile = NULL;
+    resource->spooler_info.pDatatype = estrdup("TEXT");
+    resource->gdi_info.lpszDocName = NULL;
+    resource->gdi_info.lpszOutput = NULL;
+    resource->gdi_info.lpszDatatype = NULL;
+    resource->gdi_info.cbSize = 0;
+    resource->gdi_info.fwType = 0;
+
+    resource->dc = CreateDCA(NULL, resource->name, NULL, resource->pi2->pDevMode);
+    if (!resource->dc) {
+        php_error_docref(NULL, E_WARNING, "CreateDCA failed for [%s]: %d", resource->name, GetLastError());
+        efree(resource->spooler_info.pDocName);
+        efree(resource->spooler_info.pDatatype);
+        efree(resource->pi2->pDevMode);
+        efree(resource->pi2);
+        ClosePrinter(resource->handle);
+        efree(resource->name);
+        efree(resource);
+        RETURN_FALSE;
+    }
+
+    php_error_docref(NULL, E_NOTICE, "Successfully opened printer: %s", resource->name);
+    RETURN_RES(zend_register_resource(resource, le_printer));
 }
 
 
