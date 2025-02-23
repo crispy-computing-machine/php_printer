@@ -1,6 +1,7 @@
 // Arginfo for printer_open: optional string printername, returns resource or false
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_printer_open, 0, 0, IS_RESOURCE, 1)
     ZEND_ARG_TYPE_INFO(0, printername, IS_STRING, 1) // Optional (nullable)
+    ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, printername, IS_STRING, 1, "null")
 ZEND_END_ARG_INFO()
 
 // Arginfo for printer_close: resource connection, returns bool
