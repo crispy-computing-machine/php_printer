@@ -117,13 +117,13 @@ PHP_MINFO_FUNCTION(printer)
 
 static PHP_INI_MH(OnUpdatePrinter)
 {
-	if (new_value != NULL && new_value_length > 0) {
-		if (PRINTERG(default_printer)) {
-			pefree(PRINTERG(default_printer), 1);
-		}
-		PRINTERG(default_printer) = pestrdup(new_value, 1);
-	}
-	return SUCCESS;
+    if (new_value && ZSTR_LEN(new_value) > 0) {
+        if (PRINTERG(default_printer)) {
+            pefree(PRINTERG(default_printer), 1);
+        }
+        PRINTERG(default_printer) = pestrdup(ZSTR_VAL(new_value), 1);
+    }
+    return SUCCESS;
 }
 
 PHP_INI_BEGIN()
