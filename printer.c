@@ -1390,7 +1390,7 @@ ZEND_FUNCTION(printer_draw_rectangle)
 
 /* {{{ proto void printer_draw_elipse(resource handle, int ul_x, int ul_y, int lr_x, int lr_y)
    Draw an elipse */
-ZEND_FUNCTION(printer_draw_ellipse)
+ZEND_FUNCTION(printer_draw_elipse)
 {
     zval *printer_res;
     zend_long ul_x, ul_y, lr_x, lr_y;
