@@ -305,22 +305,16 @@ ZEND_FUNCTION(printer_open)
 /* }}} */
 
 
-/* {{{ proto void printer_close(resource connection)
-   Close the printer connection */
-PHP_FUNCTION(printer_close)
+ZEND_FUNCTION(printer_close)
 {
-	zval **arg1;
-	printer *resource;
+    zval *printer_res;
 
-	if ( zend_get_parameters_ex(1, &arg1) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_RESOURCE(printer_res)
+    ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
-
-	zend_list_delete(Z_RESVAL_PP(arg1));
+    zend_list_close(Z_RES_P(printer_res));
 }
-/* }}} */
 
 
 /* {{{ proto bool printer_write(resource connection,string content)
