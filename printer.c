@@ -275,11 +275,12 @@ ZEND_FUNCTION(printer_close)
     printer *resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
     if (!resource) {
         php_error_docref(NULL, E_WARNING, "Invalid printer resource");
-        return;
+        RETURN_FALSE;
     }
 
     // Close the printer resource
     zend_list_close(Z_RES_P(printer_res));
+    RETURN_TRUE;
 }
 
 
