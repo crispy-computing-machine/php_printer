@@ -347,7 +347,7 @@ ZEND_FUNCTION(printer_open)
         RETURN_FALSE;
     }
 
-    php_error_docref(NULL, E_NOTICE, "Attempting to open printer: %s", resource->name);
+    //php_error_docref(NULL, E_NOTICE, "Attempting to open printer: %s", resource->name);
 
     if (!OpenPrinterA(resource->name, &resource->handle, NULL)) {
         php_error_docref(NULL, E_WARNING, "OpenPrinterA failed for [%s]: %d", resource->name, GetLastError());
@@ -400,7 +400,7 @@ ZEND_FUNCTION(printer_open)
         RETURN_FALSE;
     }
 
-    php_error_docref(NULL, E_NOTICE, "Successfully opened printer: %s", resource->name);
+    //php_error_docref(NULL, E_NOTICE, "Successfully opened printer: %s", resource->name);
     RETURN_RES(zend_register_resource(resource, le_printer));
 }
 
@@ -765,7 +765,7 @@ ZEND_FUNCTION(printer_create_dc)
 
     // Delete old device context if it exists
     if (resource->dc != NULL) {
-        php_error_docref(NULL, E_WARNING, "Deleting old DeviceContext");
+        //php_error_docref(NULL, E_WARNING, "Deleting old DeviceContext");
         DeleteDC(resource->dc);
     }
 
