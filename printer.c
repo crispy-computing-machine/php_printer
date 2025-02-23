@@ -350,110 +350,119 @@ ZEND_FUNCTION(printer_write)
 
 /* {{{ proto array printer_list(int EnumType [, string Name [, int Level]])
    Return an array of printers attached to the server */
-PHP_FUNCTION(printer_list)
+ZEND_FUNCTION(printer_list)
 {
-	zval *Printer, *Printer_ptr, **arg1, **arg2, **arg3;
-	char InfoBuffer[8192], *Name;
+    zend_long enum_type;
+    char *name = NULL;
+    size_t name_len = 0;
+    zend_long level = 1; // Default level
+    DWORD bNeeded, cReturned;
+    BYTE *info_buffer;
+    int levels_allowed[] = {0, 1, 1, 0, 1, 1}; // Valid levels: 1, 2, 4, 5
 
-	PRINTER_INFO_1 *P1;
-	PRINTER_INFO_2 *P2;
-	PRINTER_INFO_4 *P4;
-	PRINTER_INFO_5 *P5;
-	DWORD bNeeded = sizeof(InfoBuffer), cReturned, i;
-	int argc = ZEND_NUM_ARGS(), Level;
-	int LevvelsAllowed[] = {0, 1, 1, 0, 1, 1};
+    // Parse parameters: enum_type (required), name (optional), level (optional)
+    ZEND_PARSE_PARAMETERS_START(1, 3)
+        Z_PARAM_LONG(enum_type)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_STRING(name, name_len)
+        Z_PARAM_LONG(level)
+    ZEND_PARSE_PARAMETERS_END();
 
-	if( argc < 1 || argc > 3 || zend_get_parameters_ex(argc, &arg1, &arg2, &arg3) == FAILURE) {
-		WRONG_PARAM_COUNT;
-	}
+    // Validate level
+    if (level < 0 || level > 5 || !levels_allowed[level]) {
+        php_error_docref(NULL, E_WARNING, "Invalid level specified: %ld. Allowed levels are 1, 2, 4, 5", level);
+        RETURN_FALSE;
+    }
 
-	Level = 1;
-	Name = NULL;
+    // Initialize return array
+    array_init(return_value);
+    if (Z_TYPE_P(return_value) != IS_ARRAY) {
+        php_error_docref(NULL, E_WARNING, "Failed to initialize return array");
+        RETURN_FALSE;
+    }
 
-	switch(argc) {
-		case 3:
-			convert_to_long_ex(arg3);
-			Level = (int)Z_LVAL_PP(arg3);
-			if(!LevvelsAllowed[Level]) {
-				php_error_docref(NULL E_WARNING, "Level not allowed");
-				RETURN_FALSE;
-			}
-		case 2:
-			convert_to_string_ex(arg2);
-			Name = Z_STRVAL_PP(arg2);
-		case 1:
-			convert_to_long_ex(arg1);
-			break;
-	}
+    // First call to get required buffer size
+    EnumPrintersA(enum_type, name, level, NULL, 0, &bNeeded, &cReturned);
+    if (bNeeded == 0) {
+        // No printers found or error, return empty array
+        return;
+    }
 
-	
-	if(array_init(return_value) == FAILURE) {
-		RETURN_FALSE;
-	}
+    // Allocate buffer
+    info_buffer = emalloc(bNeeded);
+    if (!info_buffer) {
+        php_error_docref(NULL, E_WARNING, "Memory allocation failed");
+        zval_ptr_dtor(return_value);
+        RETURN_FALSE;
+    }
 
+    // Enumerate printers
+    if (!EnumPrintersA(enum_type, name, level, info_buffer, bNeeded, &bNeeded, &cReturned)) {
+        php_error_docref(NULL, E_WARNING, "Failed to enumerate printers: %d", GetLastError());
+        efree(info_buffer);
+        zval_ptr_dtor(return_value);
+        RETURN_FALSE;
+    }
 
-	EnumPrinters(Z_LVAL_PP(arg1), Name, Level, (LPBYTE)InfoBuffer, sizeof(InfoBuffer), &bNeeded, &cReturned);
+    // Process results based on level
+    for (DWORD i = 0; i < cReturned; i++) {
+        zval printer_info;
+        array_init(&printer_info);
 
-	P1 = (PRINTER_INFO_1 *)InfoBuffer;
-	P2 = (PRINTER_INFO_2 *)InfoBuffer;
-	P4 = (PRINTER_INFO_4 *)InfoBuffer;
-	P5 = (PRINTER_INFO_5 *)InfoBuffer;
+        switch (level) {
+            case 1: {
+                PRINTER_INFO_1A *p1 = &((PRINTER_INFO_1A *)info_buffer)[i];
+                add_assoc_string(&printer_info, "NAME", p1->pName ? p1->pName : "");
+                add_assoc_string(&printer_info, "DESCRIPTION", p1->pDescription ? p1->pDescription : "");
+                add_assoc_string(&printer_info, "COMMENT", p1->pComment ? p1->pComment : "");
+                break;
+            }
+            case 2: {
+                PRINTER_INFO_2A *p2 = &((PRINTER_INFO_2A *)info_buffer)[i];
+                if (p2->pServerName) add_assoc_string(&printer_info, "SERVERNAME", p2->pServerName);
+                if (p2->pPrinterName) add_assoc_string(&printer_info, "PRINTERNAME", p2->pPrinterName);
+                if (p2->pShareName) add_assoc_string(&printer_info, "SHARENAME", p2->pShareName);
+                if (p2->pPortName) add_assoc_string(&printer_info, "PORTNAME", p2->pPortName);
+                if (p2->pDriverName) add_assoc_string(&printer_info, "DRIVERNAME", p2->pDriverName);
+                if (p2->pComment) add_assoc_string(&printer_info, "COMMENT", p2->pComment);
+                if (p2->pLocation) add_assoc_string(&printer_info, "LOCATION", p2->pLocation);
+                if (p2->pSepFile) add_assoc_string(&printer_info, "SEPFILE", p2->pSepFile);
+                if (p2->pPrintProcessor) add_assoc_string(&printer_info, "PRINTPROCESSOR", p2->pPrintProcessor);
+                if (p2->pDatatype) add_assoc_string(&printer_info, "DATATYPE", p2->pDatatype);
+                if (p2->pParameters) add_assoc_string(&printer_info, "PARAMETRES", p2->pParameters);
+                add_assoc_long(&printer_info, "ATTRIBUTES", p2->Attributes);
+                add_assoc_long(&printer_info, "PRIORITY", p2->Priority);
+                add_assoc_long(&printer_info, "DEFAULTPRIORITY", p2->DefaultPriority);
+                add_assoc_long(&printer_info, "STARTTIME", p2->StartTime);
+                add_assoc_long(&printer_info, "UNTILTIME", p2->UntilTime);
+                add_assoc_long(&printer_info, "STATUS", p2->Status);
+                add_assoc_long(&printer_info, "CJOBS", p2->cJobs);
+                add_assoc_long(&printer_info, "AVERAGEPPM", p2->AveragePPM);
+                break;
+            }
+            case 4: {
+                PRINTER_INFO_4A *p4 = &((PRINTER_INFO_4A *)info_buffer)[i];
+                add_assoc_string(&printer_info, "PRINTERNAME", p4->pPrinterName ? p4->pPrinterName : "");
+                add_assoc_string(&printer_info, "SERVERNAME", p4->pServerName ? p4->pServerName : "");
+                add_assoc_long(&printer_info, "ATTRIBUTES", p4->Attributes);
+                break;
+            }
+            case 5: {
+                PRINTER_INFO_5A *p5 = &((PRINTER_INFO_5A *)info_buffer)[i];
+                add_assoc_string(&printer_info, "PRINTERNAME", p5->pPrinterName ? p5->pPrinterName : "");
+                add_assoc_string(&printer_info, "PORTNAME", p5->pPortName ? p5->pPortName : "");
+                add_assoc_long(&printer_info, "ATTRIBUTES", p5->Attributes);
+                add_assoc_long(&printer_info, "DEVICENOTSELECTEDTIMEOUT", p5->DeviceNotSelectedTimeout);
+                add_assoc_long(&printer_info, "TRANSMISSIONRETRYTIMEOUT", p5->TransmissionRetryTimeout);
+                break;
+            }
+        }
 
+        // Add sub-array to return value at index i
+        add_index_zval(return_value, i, &printer_info);
+    }
 
-	for(i = 0; i < cReturned; i++) {
-		Printer = (zval *) emalloc(sizeof(zval));
-		array_init(Printer);
-		
-		switch (Level) {
-			case 1:
-				add_assoc_string(Printer, "NAME", P1->pName, 1);
-				add_assoc_string(Printer, "DESCRIPTION", P1->pDescription, 1);
-				add_assoc_string(Printer, "COMMENT", P1->pComment, 1);
-				P1++;
-				break;
-
-			case 2:
-				if (P2->pServerName) add_assoc_string(Printer, "SERVERNAME", P2->pServerName, 1);
-				if (P2->pPrinterName) add_assoc_string(Printer, "PRINTERNAME", P2->pPrinterName, 1);
-				if (P2->pShareName) add_assoc_string(Printer, "SHARENAME", P2->pShareName, 1);
-				if (P2->pPortName) add_assoc_string(Printer, "PORTNAME", P2->pPortName, 1);
-				if (P2->pDriverName) add_assoc_string(Printer, "DRIVERNAME", P2->pDriverName, 1);
-				if (P2->pComment) add_assoc_string(Printer, "COMMENT", P2->pComment, 1);
-				if (P2->pLocation) add_assoc_string(Printer, "LOCATION", P2->pLocation, 1);
-				if (P2->pSepFile) add_assoc_string(Printer, "SEPFILE", P2->pSepFile, 1);
-				if (P2->pPrintProcessor) add_assoc_string(Printer, "PRINTPROCESSOR", P2->pPrintProcessor, 1);
-				if (P2->pDatatype) add_assoc_string(Printer, "DATATYPE", P2->pDatatype, 1);
-				if (P2->pParameters) add_assoc_string(Printer, "PARAMETRES", P2->pParameters, 1);
-				add_assoc_long(Printer, "ATTRIBUTES", P2->Attributes);
-				add_assoc_long(Printer, "PRIORITY", P2->Priority);
-				add_assoc_long(Printer, "DEFAULTPRIORITY", P2->DefaultPriority);
-				add_assoc_long(Printer, "STARTTIME", P2->StartTime);
-				add_assoc_long(Printer, "UNTILTIME", P2->UntilTime);
-				add_assoc_long(Printer, "STATUS", P2->Status);
-				add_assoc_long(Printer, "CJOBS", P2->cJobs);
-				add_assoc_long(Printer, "AVERAGEPPM", P2->AveragePPM);
-				P2++;
-				break;
-
-			case 4:
-				add_assoc_string(Printer, "PRINTERNAME", P4->pPrinterName, 1);
-				add_assoc_string(Printer, "SERVERNAME", P4->pServerName, 1);
-				add_assoc_long(Printer, "ATTRIBUTES", P4->Attributes);
-				P4++;
-				break;
-
-			case 5:
-				add_assoc_string(Printer, "PRINTERNAME", P5->pPrinterName, 1);
-				add_assoc_string(Printer, "PORTNAME", P5->pPortName, 1);
-				add_assoc_long(Printer, "ATTRIBUTES", P5->Attributes);
-				add_assoc_long(Printer, "DEVICENOTSELECTEDTIMEOUT", P5->DeviceNotSelectedTimeout);
-				add_assoc_long(Printer, "TRANSMISSIONRETRYTIMEOUT", P5->TransmissionRetryTimeout);
-				P5++;
-				break;
-		}
-
-		zend_hash_index_update(Z_ARRVAL_P(return_value), i, (void *) &Printer, sizeof(zval *), (void **) &Printer_ptr);
-	}
+    efree(info_buffer);
 }
 
 /* }}} */
