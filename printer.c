@@ -77,7 +77,7 @@ zend_function_entry printer_functions[] = {
 	PHP_FE(printer_draw_roundrect,		arginfo_printer_draw_roundrect)
 	PHP_FE(printer_draw_rectangle,		arginfo_printer_draw_rectangle)
 	PHP_FE(printer_draw_text,			arginfo_printer_draw_text)
-	PHP_FE(printer_draw_elipse,			arginfo_printer_draw_elipse)
+	PHP_FE(printer_draw_ellipse,			arginfo_printer_draw_ellipse)
 	PHP_FE(printer_draw_line,			arginfo_printer_draw_line)
 	PHP_FE(printer_draw_chord,			arginfo_printer_draw_chord)
 	PHP_FE(printer_draw_pie,			arginfo_printer_draw_pie)
@@ -1446,7 +1446,7 @@ ZEND_FUNCTION(printer_draw_rectangle)
 
 /* {{{ proto void printer_draw_elipse(resource handle, int ul_x, int ul_y, int lr_x, int lr_y)
    Draw an elipse */
-ZEND_FUNCTION(printer_draw_elipse)
+ZEND_FUNCTION(printer_draw_ellipse)
 {
     zval *printer_res;
     zend_long ul_x, ul_y, lr_x, lr_y;
