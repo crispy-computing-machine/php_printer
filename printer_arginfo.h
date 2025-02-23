@@ -150,7 +150,7 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_printer_draw_rectangle, 0, 5, _I
 ZEND_END_ARG_INFO()
 
 // Arginfo for printer_draw_ellipse: resource connection, int ul_x, int ul_y, int lr_x, int lr_y, returns bool
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_printer_draw_ellipse, 0, 5, _IS_BOOL, 0)
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_printer_draw_elipse, 0, 5, _IS_BOOL, 0)
     ZEND_ARG_TYPE_INFO(0, connection, IS_RESOURCE, 0)
     ZEND_ARG_TYPE_INFO(0, ul_x, IS_LONG, 0)
     ZEND_ARG_TYPE_INFO(0, ul_y, IS_LONG, 0)
