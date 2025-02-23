@@ -470,129 +470,136 @@ ZEND_FUNCTION(printer_list)
 
 /* {{{ proto bool printer_set_option(resource connection,string option,mixed value)
    Configure the printer device */
-PHP_FUNCTION(printer_set_option)
+ZEND_FUNCTION(printer_set_option)
 {
-	DWORD dwNeeded =0;
-	PRINTER_DEFAULTS pd;
-	zval **arg1, **arg2, **arg3;
-	printer *resource;
+    zval *printer_res;
+    zend_long option;
+    zval *value;
+    printer *resource;
+    PRINTER_DEFAULTS pd = {0};
 
-	if( zend_get_parameters_ex(3, &arg1, &arg2, &arg3) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    // Parse parameters: resource (required), option (required), value (required)
+    ZEND_PARSE_PARAMETERS_START(3, 3)
+        Z_PARAM_RESOURCE(printer_res)
+        Z_PARAM_LONG(option)
+        Z_PARAM_ZVAL(value)
+    ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
-	convert_to_long_ex(arg2);
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        RETURN_FALSE;
+    }
 
-	memset(&pd,0,sizeof(pd));
-	pd.DesiredAccess = PRINTER_ALL_ACCESS;
-	SetLastError(0);
+    // Set up printer defaults for access control
+    pd.DesiredAccess = PRINTER_ALL_ACCESS;
+    SetLastError(0);
 
-	switch(Z_LVAL_PP(arg2)) {
-		case COPIES:
-			convert_to_long_ex(arg3);
-			resource->pi2->pDevMode->dmCopies=(short)Z_LVAL_PP(arg3);
-			resource->dmModifiedFields|=DM_COPIES;
-			break;
+    // Handle each option
+    switch (option) {
+        case COPIES:
+            ZVAL_LONG(value, zval_get_long(value)); // Ensure value is a long
+            resource->pi2->pDevMode->dmCopies = (short)Z_LVAL_P(value);
+            resource->dmModifiedFields |= DM_COPIES;
+            break;
 
-		case MODE:
-			convert_to_string_ex(arg3);
-			if (resource->info.lpszDatatype) {
-				efree((char *)resource->info.lpszDatatype);
-			}
-			resource->info.lpszDatatype		= estrdup(Z_STRVAL_PP(arg3));
-			resource->info.cbSize			= sizeof(resource->info);
-			break;
+        case MODE:
+            ZVAL_STRING(value, zval_get_string(value)); // Ensure string
+            if (resource->info.pDatatype) {
+                efree((char *)resource->info.pDatatype);
+            }
+            resource->info.pDatatype = estrdup(Z_STRVAL_P(value));
+            break;
 
-		case TITLE:
-			convert_to_string_ex(arg3);
-			if (resource->info.lpszDocName) {
-				efree((char *)resource->info.lpszDocName);
-			}
-			resource->info.lpszDocName		= estrdup(Z_STRVAL_PP(arg3));
-			resource->info.cbSize			= sizeof(resource->info);
-			break;
+        case TITLE:
+            ZVAL_STRING(value, zval_get_string(value));
+            if (resource->info.pDocName) {
+                efree((char *)resource->info.pDocName);
+            }
+            resource->info.pDocName = estrdup(Z_STRVAL_P(value));
+            break;
 
-		case OUTPUT_FILE:
-			convert_to_string_ex(arg3);
-			if (resource->info.lpszOutput) {
-				efree((char *)resource->info.lpszOutput);
-			}
-			resource->info.lpszOutput		= estrdup(Z_STRVAL_PP(arg3));
-			resource->info.cbSize			= sizeof(resource->info);
-			break;
+        case OUTPUT_FILE:
+            ZVAL_STRING(value, zval_get_string(value));
+            if (resource->info.pOutputFile) {
+                efree((char *)resource->info.pOutputFile);
+            }
+            resource->info.pOutputFile = estrdup(Z_STRVAL_P(value));
+            break;
 
-		case ORIENTATION:
-			convert_to_long_ex(arg3);
-			resource->pi2->pDevMode->dmOrientation=(short)Z_LVAL_PP(arg3);
-			resource->dmModifiedFields|=DM_ORIENTATION;
-			break;
+        case ORIENTATION:
+            ZVAL_LONG(value, zval_get_long(value));
+            resource->pi2->pDevMode->dmOrientation = (short)Z_LVAL_P(value);
+            resource->dmModifiedFields |= DM_ORIENTATION;
+            break;
 
-		case YRESOLUTION:
-			convert_to_long_ex(arg3);
-			resource->pi2->pDevMode->dmYResolution = (short)Z_LVAL_PP(arg3);
-			resource->dmModifiedFields|=DM_YRESOLUTION;
-			break;
-		
-		case XRESOLUTION:
-			convert_to_long_ex(arg3);
-			resource->pi2->pDevMode->dmPrintQuality= (short)Z_LVAL_PP(arg3);
-			resource->dmModifiedFields|=DM_PRINTQUALITY;
-			break;
+        case YRESOLUTION:
+            ZVAL_LONG(value, zval_get_long(value));
+            resource->pi2->pDevMode->dmYResolution = (short)Z_LVAL_P(value);
+            resource->dmModifiedFields |= DM_YRESOLUTION;
+            break;
 
-		case PAPER_FORMAT:
-			convert_to_long_ex(arg3);
-			resource->pi2->pDevMode->dmPaperSize	= (short)Z_LVAL_PP(arg3);
-			resource->dmModifiedFields|=DM_PAPERSIZE;
-			break;
+        case XRESOLUTION:
+            ZVAL_LONG(value, zval_get_long(value));
+            resource->pi2->pDevMode->dmPrintQuality = (short)Z_LVAL_P(value);
+            resource->dmModifiedFields |= DM_PRINTQUALITY;
+            break;
 
-		case PAPER_LENGTH:
-			convert_to_long_ex(arg3);
-			resource->pi2->pDevMode->dmPaperLength = (short)(Z_LVAL_PP(arg3) * 10);
-			resource->dmModifiedFields|=DM_PAPERLENGTH;
-			break;
+        case PAPER_FORMAT:
+            ZVAL_LONG(value, zval_get_long(value));
+            resource->pi2->pDevMode->dmPaperSize = (short)Z_LVAL_P(value);
+            resource->dmModifiedFields |= DM_PAPERSIZE;
+            break;
 
-		case PAPER_WIDTH:
-			convert_to_long_ex(arg3);
-			resource->pi2->pDevMode->dmPaperWidth	= (short)(Z_LVAL_PP(arg3) * 10);
-			resource->dmModifiedFields |=  DM_PAPERWIDTH;
-			break;
+        case PAPER_LENGTH:
+            ZVAL_LONG(value, zval_get_long(value));
+            resource->pi2->pDevMode->dmPaperLength = (short)(Z_LVAL_P(value) * 10);
+            resource->dmModifiedFields |= DM_PAPERLENGTH;
+            break;
 
-		case SCALE:
-			convert_to_long_ex(arg3);
-			resource->pi2->pDevMode->dmScale		= (short)Z_LVAL_PP(arg3);
-			resource->dmModifiedFields |= DM_SCALE;
-			break;
+        case PAPER_WIDTH:
+            ZVAL_LONG(value, zval_get_long(value));
+            resource->pi2->pDevMode->dmPaperWidth = (short)(Z_LVAL_P(value) * 10);
+            resource->dmModifiedFields |= DM_PAPERWIDTH;
+            break;
 
-		case BG_COLOR:
-			convert_to_string_ex(arg3);
-			SetBkColor(resource->dc, hex_to_rgb(Z_STRVAL_PP(arg3)));
-			break;
+        case SCALE:
+            ZVAL_LONG(value, zval_get_long(value));
+            resource->pi2->pDevMode->dmScale = (short)Z_LVAL_P(value);
+            resource->dmModifiedFields |= DM_SCALE;
+            break;
 
-		case TEXT_COLOR:
-			convert_to_string_ex(arg3);
-			SetTextColor(resource->dc, hex_to_rgb(Z_STRVAL_PP(arg3)));
-			break;
+        case BG_COLOR:
+            ZVAL_STRING(value, zval_get_string(value));
+            SetBkColor(resource->dc, hex_to_rgb(Z_STRVAL_P(value)));
+            break;
 
-		case TEXT_ALIGN:
-			convert_to_string_ex(arg3);
-			SetTextAlign(resource->dc, Z_LVAL_PP(arg3));
-			break;
-		case VALID_OPTIONS:
-			resource->pi2->pSecurityDescriptor=NULL;
-			resource->pi2->pDevMode->dmFields=resource->dmModifiedFields;
-			resource->dmModifiedFields=0;
-			DocumentProperties(NULL,resource->handle,resource->name,resource->pi2->pDevMode,resource->pi2->pDevMode,DM_IN_BUFFER | DM_OUT_BUFFER);
-			SetPrinter(resource->handle,2,(LPBYTE)resource->pi2,0);
-			SendMessageTimeout(HWND_BROADCAST,WM_DEVMODECHANGE,0L,(LPARAM)(LPCSTR)resource->name,SMTO_NORMAL,1000,NULL);
-		break;
-		default:
-			php_error_docref(NULL E_WARNING, "unknown option passed to printer_set_option()");
-			RETURN_FALSE;
-	}
+        case TEXT_COLOR:
+            ZVAL_STRING(value, zval_get_string(value));
+            SetTextColor(resource->dc, hex_to_rgb(Z_STRVAL_P(value)));
+            break;
 
+        case TEXT_ALIGN:
+            ZVAL_LONG(value, zval_get_long(value));
+            SetTextAlign(resource->dc, Z_LVAL_P(value));
+            break;
 
-	RETURN_TRUE;
+        case VALID_OPTIONS:
+            resource->pi2->pSecurityDescriptor = NULL;
+            resource->pi2->pDevMode->dmFields = resource->dmModifiedFields;
+            resource->dmModifiedFields = 0;
+            DocumentPropertiesA(NULL, resource->handle, resource->name, resource->pi2->pDevMode, resource->pi2->pDevMode, DM_IN_BUFFER | DM_OUT_BUFFER);
+            SetPrinterA(resource->handle, 2, (LPBYTE)resource->pi2, 0);
+            SendMessageTimeoutA(HWND_BROADCAST, WM_DEVMODECHANGE, 0L, (LPARAM)(LPCSTR)resource->name, SMTO_NORMAL, 1000, NULL);
+            break;
+
+        default:
+            php_error_docref(NULL, E_WARNING, "Unknown option passed to printer_set_option(): %ld", option);
+            RETURN_FALSE;
+    }
+
+    RETURN_TRUE;
 }
 /* }}} */
 
