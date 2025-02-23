@@ -68,13 +68,13 @@ PHP_FUNCTION(printer_draw_pie);
 PHP_FUNCTION(printer_draw_bmp);
 PHP_FUNCTION(printer_abort);
 
-typedef struct {
-	HANDLE handle;
-	LPTSTR name;
-	DOCINFO info;
-	HDC dc;
-	PRINTER_INFO_2 *pi2;
-	DWORD dmModifiedFields;
+typedef struct _printer {
+    HANDLE handle;
+    PRINTER_INFO_2 *pi2;
+    DOC_INFO_1 info;
+    HDC dc;
+    char *name;
+    DWORD dmModifiedFields;
 } printer;
 
 ZEND_BEGIN_MODULE_GLOBALS(printer)
