@@ -30,7 +30,7 @@
 #include "ext/standard/php_string.h"
 #include "ext/standard/info.h"
 #include "ext/standard/php_math.h"
-#include "zend.h" // Explicitly include
+
 
 #ifdef HAVE_PRINTER
 
