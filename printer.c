@@ -282,15 +282,14 @@ ZEND_FUNCTION(printer_open)
         resource->name = PRINTERG(default_printer);
     }
 
-    if (OpenPrinterA(resource->name, &resource->handle, NULL)) { // Use OpenPrinterA for ANSI
+    if (OpenPrinterA(resource->name, &resource->handle, NULL)) {
         resource->pi2 = emalloc(sizeof(PRINTER_INFO_2));
         resource->pi2->pDevMode = emalloc(DocumentPropertiesA(NULL, NULL, resource->name, NULL, NULL, 0));
         if (DocumentPropertiesA(NULL, resource->handle, resource->name, resource->pi2->pDevMode, NULL, DM_OUT_BUFFER) == IDOK) {
-            resource->info.pDocName = estrdup("PHP generated Document"); // Correct field name
-            resource->info.pOutputFile = NULL;                          // Correct field name
-            resource->info.pDatatype = estrdup("TEXT");                 // Correct field name
-            resource->info.fwType = 0;
-            resource->info.cbSize = sizeof(resource->info);
+            resource->info.pDocName = estrdup("PHP generated Document");
+            resource->info.pOutputFile = NULL;
+            resource->info.pDatatype = estrdup("TEXT");
+            // Remove fwType and cbSize as they don't exist in DOC_INFO_1
             resource->dc = CreateDCA(NULL, resource->name, NULL, resource->pi2->pDevMode);
             RETURN_RES(zend_register_resource(resource, le_printer));
         }
@@ -314,42 +313,39 @@ ZEND_FUNCTION(printer_close)
 }
 
 
-/* {{{ proto bool printer_write(resource connection,string content)
-   Write directly to the printer */
-PHP_FUNCTION(printer_write)
+ZEND_FUNCTION(printer_write)
 {
-	zval **arg1, **arg2;
-	printer *resource;
-	DOC_INFO_1 docinfo;
-	int sd, sp = 0, recieved;
+    zval *printer_res;
+    char *content;
+    size_t content_len;
+    printer *resource;
+    DOC_INFO_1 docinfo;
+    DWORD received;
 
-	if ( zend_get_parameters_ex(2, &arg1, &arg2) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    ZEND_PARSE_PARAMETERS_START(2, 2)
+        Z_PARAM_RESOURCE(printer_res)
+        Z_PARAM_STRING(content, content_len)
+    ZEND_PARSE_PARAMETERS_END();
 
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        RETURN_FALSE;
+    }
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
-	convert_to_string_ex(arg2);
+    docinfo.pDocName = resource->info.pDocName;
+    docinfo.pOutputFile = resource->info.pOutputFile;
+    docinfo.pDatatype = resource->info.pDatatype;
 
-	docinfo.pDocName	= (LPTSTR)resource->info.lpszDocName;
-	docinfo.pOutputFile	= (LPTSTR)resource->info.lpszOutput;
-	docinfo.pDatatype	= (LPTSTR)resource->info.lpszDatatype;
-
-	sd = StartDocPrinter(resource->handle, 1, (LPBYTE)&docinfo);
-	sp = StartPagePrinter(resource->handle);
-
-	if( sd && sp ) {
-		WritePrinter(resource->handle, Z_STRVAL_PP(arg2), Z_STRLEN_PP(arg2), &recieved);
-		EndPagePrinter(resource->handle);
-		EndDocPrinter(resource->handle);
-		RETURN_TRUE;
-	}
-	else {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "couldn't allocate the printerjob [%d]", GetLastError());
-		RETURN_FALSE;
-	}
+    if (StartDocPrinterA(resource->handle, 1, (LPBYTE)&docinfo) && StartPagePrinter(resource->handle)) {
+        WritePrinter(resource->handle, content, content_len, &received);
+        EndPagePrinter(resource->handle);
+        EndDocPrinter(resource->handle);
+        RETURN_TRUE;
+    } else {
+        php_error_docref(NULL, E_WARNING, "couldn't allocate the printer job [%d]", GetLastError());
+        RETURN_FALSE;
+    }
 }
-/* }}} */
 
 
 /* {{{ proto array printer_list(int EnumType [, string Name [, int Level]])
