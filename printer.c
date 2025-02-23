@@ -262,8 +262,6 @@ PHP_MSHUTDOWN_FUNCTION(printer)
 
 
 
-/* {{{ proto mixed printer_open([string printername])
-   Return a handle to the printer or false if connection failed */
 ZEND_FUNCTION(printer_open)
 {
     char *printer_name = NULL;
@@ -284,16 +282,16 @@ ZEND_FUNCTION(printer_open)
         resource->name = PRINTERG(default_printer);
     }
 
-    if (OpenPrinter(resource->name, &resource->handle, NULL)) {
+    if (OpenPrinterA(resource->name, &resource->handle, NULL)) { // Use OpenPrinterA for ANSI
         resource->pi2 = emalloc(sizeof(PRINTER_INFO_2));
-        resource->pi2->pDevMode = emalloc(DocumentProperties(NULL, NULL, resource->name, NULL, NULL, 0));
-        if (DocumentProperties(NULL, resource->handle, resource->name, resource->pi2->pDevMode, NULL, DM_OUT_BUFFER) == IDOK) {
-            resource->info.lpszDocName = estrdup("PHP generated Document");
-            resource->info.lpszOutput = NULL;
-            resource->info.lpszDatatype = estrdup("TEXT");
+        resource->pi2->pDevMode = emalloc(DocumentPropertiesA(NULL, NULL, resource->name, NULL, NULL, 0));
+        if (DocumentPropertiesA(NULL, resource->handle, resource->name, resource->pi2->pDevMode, NULL, DM_OUT_BUFFER) == IDOK) {
+            resource->info.pDocName = estrdup("PHP generated Document"); // Correct field name
+            resource->info.pOutputFile = NULL;                          // Correct field name
+            resource->info.pDatatype = estrdup("TEXT");                 // Correct field name
             resource->info.fwType = 0;
             resource->info.cbSize = sizeof(resource->info);
-            resource->dc = CreateDC(NULL, resource->name, NULL, resource->pi2->pDevMode);
+            resource->dc = CreateDCA(NULL, resource->name, NULL, resource->pi2->pDevMode);
             RETURN_RES(zend_register_resource(resource, le_printer));
         }
     }
@@ -302,7 +300,6 @@ ZEND_FUNCTION(printer_open)
     efree(resource);
     RETURN_FALSE;
 }
-/* }}} */
 
 
 ZEND_FUNCTION(printer_close)
