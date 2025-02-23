@@ -171,10 +171,10 @@ PHP_MINIT_FUNCTION(printer)
     REGISTER_INI_ENTRIES();
 
     // Register resource types
-    le_printer = zend_register_list_dtor_ex(printer_dtor, NULL, "printer", module_number);
-    le_pen = zend_register_list_dtor_ex(object_dtor, NULL, "printer pen", module_number);
-    le_font = zend_register_list_dtor_ex(object_dtor, NULL, "printer font", module_number);
-    le_brush = zend_register_list_dtor_ex(object_dtor, NULL, "printer brush", module_number);
+    le_printer = zend_register_list_destructors_ex(printer_dtor, NULL, "printer", module_number);
+    le_pen = zend_register_list_destructors_ex(object_dtor, NULL, "printer pen", module_number);
+    le_font = zend_register_list_destructors_ex(object_dtor, NULL, "printer font", module_number);
+    le_brush = zend_register_list_destructors_ex(object_dtor, NULL, "printer brush", module_number);
 
 	REGP_CONSTANT("PRINTER_COPIES",				COPIES);
 	REGP_CONSTANT("PRINTER_MODE",				MODE);
