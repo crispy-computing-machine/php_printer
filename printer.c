@@ -44,8 +44,8 @@ static int le_printer, le_brush, le_pen, le_font;
 
 COLORREF hex_to_rgb(char * hex);
 char *rgb_to_hex(COLORREF rgb);
-static void printer_close(zend_rsrc_list_entry *resource TSRMLS_DC);
-static void object_close(zend_rsrc_list_entry *resource TSRMLS_DC);
+static void printer_close(zend_rsrc_list_entry *resource);
+static void object_close(zend_rsrc_list_entry *resource);
 char *get_default_printer(void);
 
 zend_function_entry printer_functions[] = {
@@ -152,11 +152,11 @@ PHP_INI_END()
 
 #define REGP_CONSTANT(a,b)	REGISTER_LONG_CONSTANT(a, b, CONST_CS | CONST_PERSISTENT);
 
-static void php_printer_init(zend_printer_globals *printer_globals TSRMLS_DC) {
+static void php_printer_init(zend_printer_globals *printer_globals) {
 	printer_globals->default_printer = get_default_printer();
 }
 
-static void php_printer_shutdown(zend_printer_globals *printer_globals TSRMLS_DC) {
+static void php_printer_shutdown(zend_printer_globals *printer_globals) {
 	if (printer_globals->default_printer) {
 		pefree(printer_globals->default_printer, 1);
 	}
@@ -1412,7 +1412,7 @@ char *rgb_to_hex(COLORREF rgb)
 	return string;
 } 
 
-static void printer_close(zend_rsrc_list_entry *resource TSRMLS_DC)
+static void printer_close(zend_rsrc_list_entry *resource)
 {
 	printer *p = (printer*)resource->ptr;
 
@@ -1434,7 +1434,7 @@ static void printer_close(zend_rsrc_list_entry *resource TSRMLS_DC)
 	}
 	efree(p);
 }
-static void object_close(zend_rsrc_list_entry *resource TSRMLS_DC)
+static void object_close(zend_rsrc_list_entry *resource)
 {
 	HGDIOBJ p = (HGDIOBJ)resource->ptr;
 	DeleteObject(p);
