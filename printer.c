@@ -254,7 +254,7 @@ PHP_MSHUTDOWN_FUNCTION(printer)
 #ifdef ZTS
 	ts_free_id(printer_globals_id);
 #else
-	php_printer_shutdown(&printer_globals TSRMLS_CC);
+	php_printer_shutdown(&printer_globals);
 #endif
 	UNREGISTER_INI_ENTRIES();
 	return SUCCESS;
@@ -375,7 +375,7 @@ PHP_FUNCTION(printer_list)
 			convert_to_long_ex(arg3);
 			Level = (int)Z_LVAL_PP(arg3);
 			if(!LevvelsAllowed[Level]) {
-				php_error_docref(NULL TSRMLS_CC, E_WARNING, "Level not allowed");
+				php_error_docref(NULL E_WARNING, "Level not allowed");
 				RETURN_FALSE;
 			}
 		case 2:
@@ -578,7 +578,7 @@ PHP_FUNCTION(printer_set_option)
 			SendMessageTimeout(HWND_BROADCAST,WM_DEVMODECHANGE,0L,(LPARAM)(LPCSTR)resource->name,SMTO_NORMAL,1000,NULL);
 		break;
 		default:
-			php_error_docref(NULL TSRMLS_CC, E_WARNING, "unknown option passed to printer_set_option()");
+			php_error_docref(NULL E_WARNING, "unknown option passed to printer_set_option()");
 			RETURN_FALSE;
 	}
 
@@ -657,7 +657,7 @@ PHP_FUNCTION(printer_get_option)
 			RETURN_LONG(resource->pi2->pDevMode->dmDriverVersion);
 
 		default:
-			php_error_docref(NULL TSRMLS_CC, E_WARNING, "unknown option passed to printer_get_option()");
+			php_error_docref(NULL E_WARNING, "unknown option passed to printer_get_option()");
 			RETURN_FALSE;
 	}
 }
@@ -678,7 +678,7 @@ PHP_FUNCTION(printer_create_dc)
 	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
 
 	if( resource->dc != NULL ) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Deleting old DeviceContext");
+		php_error_docref(NULL E_WARNING, "Deleting old DeviceContext");
 		DeleteDC(resource->dc);
 	}
 	
@@ -706,7 +706,7 @@ PHP_FUNCTION(printer_delete_dc)
 		RETURN_TRUE;
 	}
 	else {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "No DeviceContext created");
+		php_error_docref(NULL E_WARNING, "No DeviceContext created");
 		RETURN_FALSE;
 	}
 }
@@ -737,7 +737,7 @@ PHP_FUNCTION(printer_start_doc)
 	}
 
 	if(StartDoc(resource->dc, &resource->info) < 0) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "couldn't allocate new print job");
+		php_error_docref(NULL E_WARNING, "couldn't allocate new print job");
 		RETURN_FALSE;
 	}
 
@@ -760,7 +760,7 @@ PHP_FUNCTION(printer_end_doc)
 	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
 
 	if(EndDoc(resource->dc) < 0) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "couldn't terminate print job");
+		php_error_docref(NULL E_WARNING, "couldn't terminate print job");
 		RETURN_FALSE;
 	}
 
@@ -783,7 +783,7 @@ PHP_FUNCTION(printer_start_page)
 	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
 
 	if(StartPage(resource->dc) < 0) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "couldn't start a new page");
+		php_error_docref(NULL E_WARNING, "couldn't start a new page");
 		RETURN_FALSE;
 	}
 
@@ -806,7 +806,7 @@ PHP_FUNCTION(printer_end_page)
 	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
 
 	if(EndPage(resource->dc) < 0) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "couldn't end the page");
+		php_error_docref(NULL E_WARNING, "couldn't end the page");
 		RETURN_FALSE;
 	}
 
@@ -900,7 +900,7 @@ PHP_FUNCTION(printer_create_brush)
 			brush = CreateSolidBrush(hex_to_rgb(Z_STRVAL_PP(arg2)));
 			break;
 		case BRUSH_CUSTOM:
-			virtual_filepath(Z_STRVAL_PP(arg2), &path TSRMLS_CC);
+			virtual_filepath(Z_STRVAL_PP(arg2), &path);
 			bmp = LoadImage(0, path, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
 			brush = CreatePatternBrush(bmp);
 			break;
@@ -1253,12 +1253,12 @@ PHP_FUNCTION(printer_draw_bmp)
 	convert_to_long_ex(arg3);
 	convert_to_long_ex(arg4);
 
-	virtual_filepath(Z_STRVAL_PP(arg2), &path TSRMLS_CC);
+	virtual_filepath(Z_STRVAL_PP(arg2), &path);
 
 	hbmp = (HBITMAP)LoadImage(0, path, IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION|LR_LOADFROMFILE);
 
 	if (hbmp == NULL) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Failed to load bitmap %s", Z_STRVAL_PP(arg2));
+		php_error_docref(NULL, E_WARNING, "Failed to load bitmap %s", Z_STRVAL_PP(arg2));
 		RETURN_FALSE;
 	}
 
@@ -1269,7 +1269,7 @@ PHP_FUNCTION(printer_draw_bmp)
 	}
 
 	if (!(GetDeviceCaps(resource->dc, RASTERCAPS) & RC_STRETCHBLT)) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Printer does not support bitmaps");
+		php_error_docref(NULL E_WARNING, "Printer does not support bitmaps");
 		DeleteObject(hbmp);
 		RETURN_FALSE;
 	}
@@ -1288,7 +1288,7 @@ PHP_FUNCTION(printer_draw_bmp)
 	
 	if (args > 4) {
 		if (!StretchBlt(resource->dc,(int)Z_LVAL_PP(arg3), (int)Z_LVAL_PP(arg4), (int)Z_LVAL_PP(arg5), (int)Z_LVAL_PP(arg6), dummy, 0, 0, bmp_property.bmWidth,bmp_property.bmHeight, SRCCOPY)) {
-			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Printer failed to accept bitmap");
+			php_error_docref(NULL E_WARNING, "Printer failed to accept bitmap");
 			DeleteDC(dummy);
 			DeleteObject(hbmp);
 			RETURN_FALSE;
@@ -1296,7 +1296,7 @@ PHP_FUNCTION(printer_draw_bmp)
 	}
 	else {
 		if (!BitBlt(resource->dc, Z_LVAL_PP(arg3), Z_LVAL_PP(arg4), bmp_property.bmWidth, bmp_property.bmHeight, dummy, 0, 0, SRCCOPY)) {
-			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Printer failed to accept bitmap");
+			php_error_docref(NULL E_WARNING, "Printer failed to accept bitmap");
 			DeleteDC(dummy);
 			DeleteObject(hbmp);
 			RETURN_FALSE;
