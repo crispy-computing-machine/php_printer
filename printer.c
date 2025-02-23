@@ -1827,10 +1827,12 @@ static void printer_dtor(zend_resource *rsrc)
     efree(p);
 }
 
-static void object_close(zend_rsrc_list_entry *resource)
+static void object_dtor(zend_resource *rsrc)
 {
-	HGDIOBJ p = (HGDIOBJ)resource->ptr;
-	DeleteObject(p);
+    HGDIOBJ p = (HGDIOBJ)rsrc->ptr;
+    if (p) { // Optional: Check for NULL to avoid invalid calls
+        DeleteObject(p);
+    }
 }
 
 #endif
