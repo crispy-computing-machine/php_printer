@@ -305,10 +305,19 @@ ZEND_FUNCTION(printer_close)
 {
     zval *printer_res;
 
+    // Parse parameters: printer resource (required)
     ZEND_PARSE_PARAMETERS_START(1, 1)
         Z_PARAM_RESOURCE(printer_res)
     ZEND_PARSE_PARAMETERS_END();
 
+    // Fetch the printer resource (optional, since we’re just closing)
+    printer *resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        return;
+    }
+
+    // Close the printer resource
     zend_list_close(Z_RES_P(printer_res));
 }
 
@@ -693,664 +702,1028 @@ ZEND_FUNCTION(printer_get_option)
 
 /* {{{ proto void printer_create_dc(int handle)
    Create a device content */
-PHP_FUNCTION(printer_create_dc)
+ZEND_FUNCTION(printer_create_dc)
 {
-	zval **arg1;
-	printer *resource;
+    zval *printer_res;
+    printer *resource;
 
-	if( zend_get_parameters_ex(1, &arg1) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    // Parse parameters: resource (required)
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_RESOURCE(printer_res)
+    ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        return; // No return value expected, so just return
+    }
 
-	if( resource->dc != NULL ) {
-		php_error_docref(NULL E_WARNING, "Deleting old DeviceContext");
-		DeleteDC(resource->dc);
-	}
-	
-	resource->dc = CreateDC(NULL, resource->name, NULL, resource->pi2->pDevMode);
+    // Delete old device context if it exists
+    if (resource->dc != NULL) {
+        php_error_docref(NULL, E_WARNING, "Deleting old DeviceContext");
+        DeleteDC(resource->dc);
+    }
+
+    // Create new device context
+    resource->dc = CreateDCA(NULL, resource->name, NULL, resource->pi2->pDevMode);
+    if (resource->dc == NULL) {
+        php_error_docref(NULL, E_WARNING, "Failed to create new DeviceContext: %d", GetLastError());
+    }
 }
 /* }}} */
 
 
 /* {{{ proto bool printer_delete_dc(int handle)
    Delete a device content */
-PHP_FUNCTION(printer_delete_dc)
+ZEND_FUNCTION(printer_delete_dc)
 {
-	zval **arg1;
-	printer *resource;
+    zval *printer_res;
+    printer *resource;
 
-	if( zend_get_parameters_ex(1, &arg1) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    // Parse parameters: resource (required)
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_RESOURCE(printer_res)
+    ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        RETURN_FALSE;
+    }
 
-	if( resource->dc != NULL ) {
-		DeleteDC(resource->dc);
-		resource->dc = NULL;
-		RETURN_TRUE;
-	}
-	else {
-		php_error_docref(NULL E_WARNING, "No DeviceContext created");
-		RETURN_FALSE;
-	}
+    // Delete the device context if it exists
+    if (resource->dc != NULL) {
+        if (DeleteDC(resource->dc)) {
+            resource->dc = NULL;
+            RETURN_TRUE;
+        } else {
+            php_error_docref(NULL, E_WARNING, "Failed to delete DeviceContext: %d", GetLastError());
+            RETURN_FALSE;
+        }
+    } else {
+        php_error_docref(NULL, E_WARNING, "No DeviceContext created");
+        RETURN_FALSE;
+    }
 }
 /* }}} */
 
 
 /* {{{ proto bool printer_start_doc(int handle)
    Start a document */
-PHP_FUNCTION(printer_start_doc)
+ZEND_FUNCTION(printer_start_doc)
 {
-	zval **parameter[2];
-	printer *resource;
-	int argc = ZEND_NUM_ARGS();
-	
-	if (argc > 2 || argc < 1 || zend_get_parameters_array_ex(argc, parameter) == FAILURE) {
-		WRONG_PARAM_COUNT;
-	}
+    zval *printer_res;
+    char *doc_name = NULL;
+    size_t doc_name_len = 0;
+    printer *resource;
 
-	ZEND_FETCH_RESOURCE(resource, printer *, parameter[0], -1, "Printer Handle", le_printer);
-	
-	if(argc == 2) {
-		convert_to_string_ex(parameter[1]);
-		if (resource->info.lpszDocName) {
-			efree((char *)resource->info.lpszDocName);
-		}
-		resource->info.lpszDocName = estrdup(Z_STRVAL_PP(parameter[1]));
-		resource->info.cbSize	   = sizeof(resource->info);
-	}
+    // Parse parameters: resource (required), doc_name (optional)
+    ZEND_PARSE_PARAMETERS_START(1, 2)
+        Z_PARAM_RESOURCE(printer_res)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_STRING(doc_name, doc_name_len)
+    ZEND_PARSE_PARAMETERS_END();
 
-	if(StartDoc(resource->dc, &resource->info) < 0) {
-		php_error_docref(NULL E_WARNING, "couldn't allocate new print job");
-		RETURN_FALSE;
-	}
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        RETURN_FALSE;
+    }
 
-	RETURN_TRUE;
+    // Update document name if provided
+    if (doc_name) {
+        if (resource->gdi_info.lpszDocName) {
+            efree((char *)resource->gdi_info.lpszDocName);
+        }
+        resource->gdi_info.lpszDocName = estrdup(doc_name);
+    } else if (!resource->gdi_info.lpszDocName) {
+        // Default name if not set
+        resource->gdi_info.lpszDocName = estrdup("PHP Document");
+    }
+
+    // Initialize DOCINFO if not already set
+    resource->gdi_info.cbSize = sizeof(DOCINFOA);
+    if (!resource->gdi_info.lpszOutput) {
+        resource->gdi_info.lpszOutput = NULL;
+    }
+    if (!resource->gdi_info.lpszDatatype) {
+        resource->gdi_info.lpszDatatype = NULL; // Default to printer's default datatype
+    }
+    resource->gdi_info.fwType = 0;
+
+    // Start the document
+    if (StartDocA(resource->dc, &resource->gdi_info) > 0) {
+        RETURN_TRUE;
+    } else {
+        php_error_docref(NULL, E_WARNING, "Couldn't allocate new print job: %d", GetLastError());
+        RETURN_FALSE;
+    }
 }
 /* }}} */
 
 
 /* {{{ proto bool printer_end_doc(int handle)
    End a document */
-PHP_FUNCTION(printer_end_doc)
+ZEND_FUNCTION(printer_end_doc)
 {
-	zval **arg1;
-	printer *resource;
+    zval *printer_res;
+    printer *resource;
 
-	if( zend_get_parameters_ex(1, &arg1) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    // Parse parameters: resource (required)
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_RESOURCE(printer_res)
+    ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        RETURN_FALSE;
+    }
 
-	if(EndDoc(resource->dc) < 0) {
-		php_error_docref(NULL E_WARNING, "couldn't terminate print job");
-		RETURN_FALSE;
-	}
+    // Check if a device context exists
+    if (resource->dc == NULL) {
+        php_error_docref(NULL, E_WARNING, "No DeviceContext available to end document");
+        RETURN_FALSE;
+    }
 
-	RETURN_TRUE;
+    // End the document
+    if (EndDoc(resource->dc) > 0) {
+        RETURN_TRUE;
+    } else {
+        php_error_docref(NULL, E_WARNING, "Couldn't terminate print job: %d", GetLastError());
+        RETURN_FALSE;
+    }
 }
 /* }}} */
 
 
 /* {{{ proto bool printer_start_page(int handle)
    Start a page */
-PHP_FUNCTION(printer_start_page)
+ZEND_FUNCTION(printer_start_page)
 {
-	zval **arg1;
-	printer *resource;
+    zval *printer_res;
+    printer *resource;
 
-	if( ZEND_NUM_ARGS() == 1 && zend_get_parameters_ex(1, &arg1) != FAILURE ) {
-		;
-	}
+    // Parse parameters: resource (required)
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_RESOURCE(printer_res)
+    ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        RETURN_FALSE;
+    }
 
-	if(StartPage(resource->dc) < 0) {
-		php_error_docref(NULL E_WARNING, "couldn't start a new page");
-		RETURN_FALSE;
-	}
+    // Check if a device context exists
+    if (resource->dc == NULL) {
+        php_error_docref(NULL, E_WARNING, "No DeviceContext available to start page");
+        RETURN_FALSE;
+    }
 
-	RETURN_TRUE;
+    // Start the page
+    if (StartPage(resource->dc) > 0) {
+        RETURN_TRUE;
+    } else {
+        php_error_docref(NULL, E_WARNING, "Couldn't start a new page: %d", GetLastError());
+        RETURN_FALSE;
+    }
 }
 /* }}} */
 
 
 /* {{{ proto bool printer_end_page(int handle)
    End a page */
-PHP_FUNCTION(printer_end_page)
+ZEND_FUNCTION(printer_end_page)
 {
-	zval **arg1;
-	printer *resource;
+    zval *printer_res;
+    printer *resource;
 
-	if( zend_get_parameters_ex(1, &arg1) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    // Parse parameters: resource (required)
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_RESOURCE(printer_res)
+    ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        RETURN_FALSE;
+    }
 
-	if(EndPage(resource->dc) < 0) {
-		php_error_docref(NULL E_WARNING, "couldn't end the page");
-		RETURN_FALSE;
-	}
+    // Check if a device context exists
+    if (resource->dc == NULL) {
+        php_error_docref(NULL, E_WARNING, "No DeviceContext available to end page");
+        RETURN_FALSE;
+    }
 
-	RETURN_TRUE;
+    // End the page
+    if (EndPage(resource->dc) > 0) {
+        RETURN_TRUE;
+    } else {
+        php_error_docref(NULL, E_WARNING, "Couldn't end the page: %d", GetLastError());
+        RETURN_FALSE;
+    }
 }
 /* }}} */
 
 
 /* {{{ proto mixed printer_create_pen(int style, int width, string color)
    Create a pen */
-PHP_FUNCTION(printer_create_pen)
+ZEND_FUNCTION(printer_create_pen)
 {
-	zval **arg1, **arg2, **arg3;
-	HPEN pen;
+    zend_long style;
+    zend_long width;
+    char *color;
+    size_t color_len;
+    HPEN pen;
 
-	if( zend_get_parameters_ex(3, &arg1, &arg2, &arg3) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    // Parse parameters: style (required), width (required), color (required)
+    ZEND_PARSE_PARAMETERS_START(3, 3)
+        Z_PARAM_LONG(style)
+        Z_PARAM_LONG(width)
+        Z_PARAM_STRING(color, color_len)
+    ZEND_PARSE_PARAMETERS_END();
 
-	convert_to_long_ex(arg1);
-	convert_to_long_ex(arg2);
-	convert_to_string_ex(arg3);
+    // Create the pen
+    pen = CreatePen((int)style, (int)width, hex_to_rgb(color));
+    if (!pen) {
+        php_error_docref(NULL, E_WARNING, "Failed to create pen: %d", GetLastError());
+        RETURN_FALSE;
+    }
 
-	pen = CreatePen(Z_LVAL_PP(arg1), Z_LVAL_PP(arg2), hex_to_rgb(Z_STRVAL_PP(arg3)));
-
-	if(!pen) {
-		RETURN_FALSE;
-	}
-
-	ZEND_REGISTER_RESOURCE(return_value, pen, le_pen);
+    // Register and return the pen resource
+    RETURN_RES(zend_register_resource(pen, le_pen));
 }
 /* }}} */
 
 
 /* {{{ proto void printer_delete_pen(resource pen_handle)
    Delete a pen */
-PHP_FUNCTION(printer_delete_pen)
+ZEND_FUNCTION(printer_delete_pen)
 {
-	zval **arg1;
-	HPEN pen;
-	
-	if( zend_get_parameters_ex(1, &arg1) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    zval *pen_res;
+    HPEN pen;
 
-	ZEND_FETCH_RESOURCE(pen, HPEN, arg1, -1, "Pen Handle", le_pen);
+    // Parse parameters: pen resource (required)
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_RESOURCE(pen_res)
+    ZEND_PARSE_PARAMETERS_END();
 
-	zend_list_delete(Z_RESVAL_PP(arg1));
+    // Fetch the pen resource
+    pen = zend_fetch_resource(Z_RES_P(pen_res), "Pen Handle", le_pen);
+    if (!pen) {
+        php_error_docref(NULL, E_WARNING, "Invalid pen resource");
+        RETURN_FALSE;
+    }
+
+    // Delete the pen resource
+    zend_list_close(Z_RES_P(pen_res));
+    RETURN_TRUE;
 }
 /* }}} */
 
 
 /* {{{ proto void printer_select_pen(resource printer_handle, resource pen_handle)
    Select a pen */
-PHP_FUNCTION(printer_select_pen)
+ZEND_FUNCTION(printer_select_pen)
 {
-	zval **arg1, **arg2;
-	HPEN pen;
-	printer *resource;
+    zval *printer_res, *pen_res;
+    printer *resource;
+    HPEN pen;
 
-	if( zend_get_parameters_ex(2, &arg1, &arg2) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    // Parse parameters: printer resource (required), pen resource (required)
+    ZEND_PARSE_PARAMETERS_START(2, 2)
+        Z_PARAM_RESOURCE(printer_res)
+        Z_PARAM_RESOURCE(pen_res)
+    ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
-	ZEND_FETCH_RESOURCE(pen, HPEN, arg2, -1, "Pen Handle", le_pen);
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        return;
+    }
 
-	SelectObject(resource->dc, pen);
+    // Fetch the pen resource
+    pen = zend_fetch_resource(Z_RES_P(pen_res), "Pen Handle", le_pen);
+    if (!pen) {
+        php_error_docref(NULL, E_WARNING, "Invalid pen resource");
+        return;
+    }
+
+    // Check if a device context exists
+    if (resource->dc == NULL) {
+        php_error_docref(NULL, E_WARNING, "No DeviceContext available to select pen");
+        return;
+    }
+
+    // Select the pen into the device context
+    SelectObject(resource->dc, pen);
 }
 /* }}} */
 
 
 /* {{{ proto mixed printer_create_brush(resource handle)
    Create a brush */
-PHP_FUNCTION(printer_create_brush)
+ZEND_FUNCTION(printer_create_brush)
 {
-	zval **arg1, **arg2;
-	HBRUSH brush;
-	HBITMAP bmp;
-	char* path;
+    zend_long style;
+    char *param;
+    size_t param_len;
+    HBRUSH brush;
+    HBITMAP bmp = NULL;
 
-	if(zend_get_parameters_ex(2, &arg1, &arg2) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    // Parse parameters: style (required), param (required)
+    ZEND_PARSE_PARAMETERS_START(2, 2)
+        Z_PARAM_LONG(style)
+        Z_PARAM_STRING(param, param_len)
+    ZEND_PARSE_PARAMETERS_END();
 
-	convert_to_long_ex(arg1);
-	convert_to_string_ex(arg2);
+    // Create the brush based on style
+    switch (style) {
+        case BRUSH_SOLID:
+            brush = CreateSolidBrush(hex_to_rgb(param));
+            break;
 
-	switch(Z_LVAL_PP(arg1)) {
-		case BRUSH_SOLID:
-			brush = CreateSolidBrush(hex_to_rgb(Z_STRVAL_PP(arg2)));
-			break;
-		case BRUSH_CUSTOM:
-			virtual_filepath(Z_STRVAL_PP(arg2), &path);
-			bmp = LoadImage(0, path, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
-			brush = CreatePatternBrush(bmp);
-			break;
-		default:
-			brush = CreateHatchBrush(Z_LVAL_PP(arg1), hex_to_rgb(Z_STRVAL_PP(arg2)));
-	}
+        case BRUSH_CUSTOM: {
+            char *path;
+            virtual_filepath(param, &path); // Resolve virtual path (PHP function)
+            bmp = (HBITMAP)LoadImageA(0, path, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
+            if (!bmp) {
+                php_error_docref(NULL, E_WARNING, "Failed to load bitmap for custom brush: %s (%d)", param, GetLastError());
+                RETURN_FALSE;
+            }
+            brush = CreatePatternBrush(bmp);
+            DeleteObject(bmp); // Clean up bitmap after creating brush
+            break;
+        }
 
-	if(!brush) {
-		RETURN_FALSE;
-	}
+        default:
+            brush = CreateHatchBrush((int)style, hex_to_rgb(param));
+            break;
+    }
 
-	ZEND_REGISTER_RESOURCE(return_value, brush, le_brush);
+    // Check if brush creation succeeded
+    if (!brush) {
+        php_error_docref(NULL, E_WARNING, "Failed to create brush: %d", GetLastError());
+        RETURN_FALSE;
+    }
+
+    // Register and return the brush resource
+    RETURN_RES(zend_register_resource(brush, le_brush));
 }
 /* }}} */
 
 
 /* {{{ proto void printer_delete_brush(resource brush_handle)
    Delete a brush */
-PHP_FUNCTION(printer_delete_brush)
+ZEND_FUNCTION(printer_delete_brush)
 {
-	zval **arg1;
-	HBRUSH brush;
-	
-	if( zend_get_parameters_ex(1, &arg1) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    zval *brush_res;
+    HBRUSH brush;
 
-	ZEND_FETCH_RESOURCE(brush, HBRUSH, arg1, -1, "Brush Handle", le_brush);
+    // Parse parameters: brush resource (required)
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_RESOURCE(brush_res)
+    ZEND_PARSE_PARAMETERS_END();
 
-	zend_list_delete(Z_RESVAL_PP(arg1));
+    // Fetch the brush resource
+    brush = zend_fetch_resource(Z_RES_P(brush_res), "Brush Handle", le_brush);
+    if (!brush) {
+        php_error_docref(NULL, E_WARNING, "Invalid brush resource");
+        return; // Void return, consistent with original
+    }
+
+    // Delete the brush resource
+    zend_list_close(Z_RES_P(brush_res));
 }
 /* }}} */
 
 
 /* {{{ proto void printer_select_brush(resource printer_handle, resource brush_handle)
    Select a brush */
-PHP_FUNCTION(printer_select_brush)
+ZEND_FUNCTION(printer_select_brush)
 {
-	zval **arg1, **arg2;
-	HBRUSH brush;
-	printer *resource;
+    zval *printer_res, *brush_res;
+    printer *resource;
+    HBRUSH brush;
 
-	if( zend_get_parameters_ex(2, &arg1, &arg2) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    // Parse parameters: printer resource (required), brush resource (required)
+    ZEND_PARSE_PARAMETERS_START(2, 2)
+        Z_PARAM_RESOURCE(printer_res)
+        Z_PARAM_RESOURCE(brush_res)
+    ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
-	ZEND_FETCH_RESOURCE(brush, HBRUSH, arg2, -1, "Brush Handle", le_brush);
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        return;
+    }
 
-	SelectObject(resource->dc, brush);
+    // Fetch the brush resource
+    brush = zend_fetch_resource(Z_RES_P(brush_res), "Brush Handle", le_brush);
+    if (!brush) {
+        php_error_docref(NULL, E_WARNING, "Invalid brush resource");
+        return;
+    }
+
+    // Check if a device context exists
+    if (resource->dc == NULL) {
+        php_error_docref(NULL, E_WARNING, "No DeviceContext available to select brush");
+        return;
+    }
+
+    // Select the brush into the device context
+    SelectObject(resource->dc, brush);
 }
 /* }}} */
 
 
 /* {{{ proto mixed printer_create_font(string face, int height, int width, int font_weight, bool italic, bool underline, bool strikeout, int orientaton)
    Create a font */
-PHP_FUNCTION(printer_create_font)
+ZEND_FUNCTION(printer_create_font)
 {
-	zval **arg1, **arg2, **arg3, **arg4, **arg5, **arg6, **arg7, **arg8;
-	HFONT font;
-	char *face;
+    char *face;
+    size_t face_len;
+    zend_long height, width, font_weight, italic, underline, strikeout, orientation;
+    HFONT font;
 
-	if( zend_get_parameters_ex(8, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6, &arg7, &arg8) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    // Parse parameters: 8 required arguments
+    ZEND_PARSE_PARAMETERS_START(8, 8)
+        Z_PARAM_STRING(face, face_len)
+        Z_PARAM_LONG(height)
+        Z_PARAM_LONG(width)
+        Z_PARAM_LONG(font_weight)
+        Z_PARAM_BOOL(italic)
+        Z_PARAM_BOOL(underline)
+        Z_PARAM_BOOL(strikeout)
+        Z_PARAM_LONG(orientation)
+    ZEND_PARSE_PARAMETERS_END();
 
-	convert_to_string_ex(arg1);
-	face = estrndup(Z_STRVAL_PP(arg1), 32);
-	convert_to_long_ex(arg2);
-	convert_to_long_ex(arg3);
-	convert_to_long_ex(arg4);
-	convert_to_boolean_ex(arg5);
-	convert_to_boolean_ex(arg6);
-	convert_to_boolean_ex(arg7);
-	convert_to_long_ex(arg8);
+    // Limit face name to 32 characters (LF_FACESIZE - 1, including null terminator)
+    char face_name[LF_FACESIZE];
+    if (face_len >= LF_FACESIZE) {
+        php_error_docref(NULL, E_WARNING, "Font face name exceeds maximum length of %d characters", LF_FACESIZE - 1);
+        RETURN_FALSE;
+    }
+    strncpy(face_name, face, face_len);
+    face_name[face_len] = '\0';
 
-	font = CreateFont(Z_LVAL_PP(arg2), Z_LVAL_PP(arg3), Z_LVAL_PP(arg8), Z_LVAL_PP(arg8), Z_LVAL_PP(arg4), Z_BVAL_PP(arg5), Z_BVAL_PP(arg6), Z_BVAL_PP(arg7), DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_ROMAN, face);
-	efree(face);
+    // Create the font
+    font = CreateFontA(
+        (int)height,           // Height
+        (int)width,            // Width
+        (int)orientation,      // Escapement
+        (int)orientation,      // Orientation (same as escapement here, per original)
+        (int)font_weight,      // Weight
+        (DWORD)italic,         // Italic
+        (DWORD)underline,      // Underline
+        (DWORD)strikeout,      // Strikeout
+        DEFAULT_CHARSET,       // Character set
+        OUT_DEFAULT_PRECIS,    // Output precision
+        CLIP_DEFAULT_PRECIS,   // Clipping precision
+        ANTIALIASED_QUALITY,   // Quality
+        DEFAULT_PITCH | FF_ROMAN, // Pitch and family
+        face_name              // Face name
+    );
 
-	if(!font) {
-		RETURN_FALSE;
-	}
+    // Check if font creation succeeded
+    if (!font) {
+        php_error_docref(NULL, E_WARNING, "Failed to create font: %d", GetLastError());
+        RETURN_FALSE;
+    }
 
-	ZEND_REGISTER_RESOURCE(return_value, font, le_font);
+    // Register and return the font resource
+    RETURN_RES(zend_register_resource(font, le_font));
 }
 /* }}} */
 
 
 /* {{{ proto void printer_delete_font(int fonthandle)
    Delete a font */
-PHP_FUNCTION(printer_delete_font)
+ZEND_FUNCTION(printer_delete_font)
 {
-	zval **arg1; 
-	HFONT font;
+    zval *font_res;
+    HFONT font;
 
-	if( zend_get_parameters_ex(1, &arg1) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
-	
-	ZEND_FETCH_RESOURCE(font, HFONT, arg1, -1, "Font Handle", le_font);
+    // Parse parameters: font resource (required)
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_RESOURCE(font_res)
+    ZEND_PARSE_PARAMETERS_END();
 
-	zend_list_delete(Z_RESVAL_PP(arg1));
+    // Fetch the font resource
+    font = zend_fetch_resource(Z_RES_P(font_res), "Font Handle", le_font);
+    if (!font) {
+        php_error_docref(NULL, E_WARNING, "Invalid font resource");
+        return; // Void return, consistent with original
+    }
+
+    // Delete the font resource
+    zend_list_close(Z_RES_P(font_res));
 }
 /* }}} */
 
 
 /* {{{ proto void printer_select_font(int printerhandle, int fonthandle)
    Select a font */
-PHP_FUNCTION(printer_select_font)
+ZEND_FUNCTION(printer_select_font)
 {
-	zval **arg1, **arg2;
-	HFONT font;
-	printer *resource;
+    zval *printer_res, *font_res;
+    printer *resource;
+    HFONT font;
 
-	if( zend_get_parameters_ex(2, &arg1, &arg2) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    // Parse parameters: printer resource (required), font resource (required)
+    ZEND_PARSE_PARAMETERS_START(2, 2)
+        Z_PARAM_RESOURCE(printer_res)
+        Z_PARAM_RESOURCE(font_res)
+    ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
-	ZEND_FETCH_RESOURCE(font, HFONT, arg2, -1, "Font Handle", le_font);
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        return;
+    }
 
-	SelectObject(resource->dc, font);
+    // Fetch the font resource
+    font = zend_fetch_resource(Z_RES_P(font_res), "Font Handle", le_font);
+    if (!font) {
+        php_error_docref(NULL, E_WARNING, "Invalid font resource");
+        return;
+    }
+
+    // Check if a device context exists
+    if (resource->dc == NULL) {
+        php_error_docref(NULL, E_WARNING, "No DeviceContext available to select font");
+        return;
+    }
+
+    // Select the font into the device context
+    SelectObject(resource->dc, font);
 }
 /* }}} */
 
 
 /* {{{ proto int printer_logical_fontheight(int handle, int height)
    Get the logical font height */
-PHP_FUNCTION(printer_logical_fontheight)
+ZEND_FUNCTION(printer_logical_fontheight)
 {
-	zval **arg1, **arg2;
-	printer *resource;
+    zval *printer_res;
+    zend_long height;
+    printer *resource;
 
-	if( zend_get_parameters_ex(2, &arg1, &arg2) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    // Parse parameters: printer resource (required), height (required)
+    ZEND_PARSE_PARAMETERS_START(2, 2)
+        Z_PARAM_RESOURCE(printer_res)
+        Z_PARAM_LONG(height)
+    ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        RETURN_FALSE;
+    }
 
-	convert_to_long_ex(arg2);
+    // Check if a device context exists
+    if (resource->dc == NULL) {
+        php_error_docref(NULL, E_WARNING, "No DeviceContext available to calculate font height");
+        RETURN_FALSE;
+    }
 
-	RETURN_LONG(MulDiv(Z_LVAL_PP(arg2), GetDeviceCaps(resource->dc, LOGPIXELSY), 72));
+    // Calculate logical font height
+    int logical_height = MulDiv((int)height, GetDeviceCaps(resource->dc, LOGPIXELSY), 72);
+    if (logical_height == 0) {
+        php_error_docref(NULL, E_WARNING, "Failed to calculate logical font height: %d", GetLastError());
+        RETURN_FALSE;
+    }
+
+    RETURN_LONG(logical_height);
 }
 /* }}} */
 
 
 /* {{{ proto void printer_draw_roundrect(resource handle, int ul_x, int ul_y, int lr_x, int lr_y, int width, int height)
    Draw a roundrect */	
-PHP_FUNCTION(printer_draw_roundrect)
+ZEND_FUNCTION(printer_draw_roundrect)
 {
-	zval **arg1, **arg2, **arg3, **arg4, **arg5, **arg6, **arg7; 
-	printer *resource;
-	
-	if( zend_get_parameters_ex(7, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6, &arg7) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    zval *printer_res;
+    zend_long ul_x, ul_y, lr_x, lr_y, width, height;
+    printer *resource;
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
+    // Parse parameters: printer resource (required), 6 long values (required)
+    ZEND_PARSE_PARAMETERS_START(7, 7)
+        Z_PARAM_RESOURCE(printer_res)
+        Z_PARAM_LONG(ul_x)
+        Z_PARAM_LONG(ul_y)
+        Z_PARAM_LONG(lr_x)
+        Z_PARAM_LONG(lr_y)
+        Z_PARAM_LONG(width)
+        Z_PARAM_LONG(height)
+    ZEND_PARSE_PARAMETERS_END();
 
-	convert_to_long_ex(arg2);
-	convert_to_long_ex(arg3);
-	convert_to_long_ex(arg4);
-	convert_to_long_ex(arg5);
-	convert_to_long_ex(arg6);
-	convert_to_long_ex(arg7);
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        return;
+    }
 
-	RoundRect(resource->dc, Z_LVAL_PP(arg2), Z_LVAL_PP(arg3), Z_LVAL_PP(arg4), Z_LVAL_PP(arg5), Z_LVAL_PP(arg6), Z_LVAL_PP(arg7));
+    // Check if a device context exists
+    if (resource->dc == NULL) {
+        php_error_docref(NULL, E_WARNING, "No DeviceContext available to draw roundrect");
+        return;
+    }
+
+    // Draw the rounded rectangle
+    if (!RoundRect(resource->dc, (int)ul_x, (int)ul_y, (int)lr_x, (int)lr_y, (int)width, (int)height)) {
+        php_error_docref(NULL, E_WARNING, "Failed to draw roundrect: %d", GetLastError());
+    }
 }
 /* }}} */
 
 
 /* {{{ proto void printer_draw_rectangle(resource handle, int ul_x, int ul_y, int lr_x, int lr_y)
    Draw a rectangle */
-PHP_FUNCTION(printer_draw_rectangle)
+ZEND_FUNCTION(printer_draw_rectangle)
 {
-	zval **arg1, **arg2, **arg3, **arg4, **arg5; 
-	printer *resource;
+    zval *printer_res;
+    zend_long ul_x, ul_y, lr_x, lr_y;
+    printer *resource;
 
-	if( zend_get_parameters_ex(5, &arg1, &arg2, &arg3, &arg4, &arg5) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    // Parse parameters: printer resource (required), 4 long values (required)
+    ZEND_PARSE_PARAMETERS_START(5, 5)
+        Z_PARAM_RESOURCE(printer_res)
+        Z_PARAM_LONG(ul_x)
+        Z_PARAM_LONG(ul_y)
+        Z_PARAM_LONG(lr_x)
+        Z_PARAM_LONG(lr_y)
+    ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        return;
+    }
 
-	convert_to_long_ex(arg2);
-	convert_to_long_ex(arg3);
-	convert_to_long_ex(arg4);
-	convert_to_long_ex(arg5);
+    // Check if a device context exists
+    if (resource->dc == NULL) {
+        php_error_docref(NULL, E_WARNING, "No DeviceContext available to draw rectangle");
+        return;
+    }
 
-	Rectangle(resource->dc, Z_LVAL_PP(arg2), Z_LVAL_PP(arg3), Z_LVAL_PP(arg4), Z_LVAL_PP(arg5));
+    // Draw the rectangle
+    if (!Rectangle(resource->dc, (int)ul_x, (int)ul_y, (int)lr_x, (int)lr_y)) {
+        php_error_docref(NULL, E_WARNING, "Failed to draw rectangle: %d", GetLastError());
+    }
 }
 /* }}} */
 
 
 /* {{{ proto void printer_draw_elipse(resource handle, int ul_x, int ul_y, int lr_x, int lr_y)
    Draw an elipse */
-PHP_FUNCTION(printer_draw_elipse)
+ZEND_FUNCTION(printer_draw_ellipse)
 {
-	zval **arg1, **arg2, **arg3, **arg4, **arg5; 
-	printer *resource;
+    zval *printer_res;
+    zend_long ul_x, ul_y, lr_x, lr_y;
+    printer *resource;
 
-	if( zend_get_parameters_ex(5, &arg1, &arg2, &arg3, &arg4, &arg5) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    // Parse parameters: printer resource (required), 4 long values (required)
+    ZEND_PARSE_PARAMETERS_START(5, 5)
+        Z_PARAM_RESOURCE(printer_res)
+        Z_PARAM_LONG(ul_x)
+        Z_PARAM_LONG(ul_y)
+        Z_PARAM_LONG(lr_x)
+        Z_PARAM_LONG(lr_y)
+    ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        return;
+    }
 
-	convert_to_long_ex(arg2);
-	convert_to_long_ex(arg3);
-	convert_to_long_ex(arg4);
-	convert_to_long_ex(arg5);
+    // Check if a device context exists
+    if (resource->dc == NULL) {
+        php_error_docref(NULL, E_WARNING, "No DeviceContext available to draw ellipse");
+        return;
+    }
 
-	Ellipse(resource->dc, Z_LVAL_PP(arg2), Z_LVAL_PP(arg3), Z_LVAL_PP(arg4), Z_LVAL_PP(arg5));
+    // Draw the ellipse
+    if (!Ellipse(resource->dc, (int)ul_x, (int)ul_y, (int)lr_x, (int)lr_y)) {
+        php_error_docref(NULL, E_WARNING, "Failed to draw ellipse: %d", GetLastError());
+    }
 }
 /* }}} */
 
 
 /* {{{ proto void printer_draw_text(resource handle, string text, int x, int y)
    Draw text */
-PHP_FUNCTION(printer_draw_text)
+ZEND_FUNCTION(printer_draw_text)
 {
-	zval **arg1, **arg2, **arg3, **arg4; 
-	printer *resource;
+    zval *printer_res;
+    char *text;
+    size_t text_len;
+    zend_long x, y;
+    printer *resource;
 
-	if( zend_get_parameters_ex(4, &arg1, &arg2, &arg3, &arg4) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    // Parse parameters: printer resource (required), text (required), x (required), y (required)
+    ZEND_PARSE_PARAMETERS_START(4, 4)
+        Z_PARAM_RESOURCE(printer_res)
+        Z_PARAM_STRING(text, text_len)
+        Z_PARAM_LONG(x)
+        Z_PARAM_LONG(y)
+    ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        return;
+    }
 
-	convert_to_string_ex(arg2);
-	convert_to_long_ex(arg3);
-	convert_to_long_ex(arg4);
+    // Check if a device context exists
+    if (resource->dc == NULL) {
+        php_error_docref(NULL, E_WARNING, "No DeviceContext available to draw text");
+        return;
+    }
 
-	ExtTextOut(resource->dc, Z_LVAL_PP(arg3), Z_LVAL_PP(arg4), ETO_OPAQUE, NULL, Z_STRVAL_PP(arg2), Z_STRLEN_PP(arg2), NULL);
+    // Draw the text
+    if (!ExtTextOutA(resource->dc, (int)x, (int)y, ETO_OPAQUE, NULL, text, (UINT)text_len, NULL)) {
+        php_error_docref(NULL, E_WARNING, "Failed to draw text: %d", GetLastError());
+    }
 }
 /* }}} */
 
 
 /* {{{ proto void printer_draw_line(int handle, int fx, int fy, int tx, int ty)
    Draw line from x, y to x, y*/
-PHP_FUNCTION(printer_draw_line)
+ZEND_FUNCTION(printer_draw_line)
 {
-	zval **arg1, **arg2, **arg3, **arg4, **arg5;
-	printer *resource;
+    zval *printer_res;
+    zend_long fx, fy, tx, ty;
+    printer *resource;
 
-	if( zend_get_parameters_ex(5, &arg1, &arg2, &arg3, &arg4, &arg5) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    // Parse parameters: printer resource (required), 4 long values (required)
+    ZEND_PARSE_PARAMETERS_START(5, 5)
+        Z_PARAM_RESOURCE(printer_res)
+        Z_PARAM_LONG(fx)
+        Z_PARAM_LONG(fy)
+        Z_PARAM_LONG(tx)
+        Z_PARAM_LONG(ty)
+    ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        return;
+    }
 
-	convert_to_long_ex(arg2);
-	convert_to_long_ex(arg3);
-	convert_to_long_ex(arg4);
-	convert_to_long_ex(arg5);
+    // Check if a device context exists
+    if (resource->dc == NULL) {
+        php_error_docref(NULL, E_WARNING, "No DeviceContext available to draw line");
+        return;
+    }
 
-	MoveToEx(resource->dc, Z_LVAL_PP(arg2), Z_LVAL_PP(arg3), NULL);
-	LineTo(resource->dc, Z_LVAL_PP(arg4), Z_LVAL_PP(arg5));
+    // Draw the line
+    if (!MoveToEx(resource->dc, (int)fx, (int)fy, NULL)) {
+        php_error_docref(NULL, E_WARNING, "Failed to set starting point for line: %d", GetLastError());
+        return;
+    }
+    if (!LineTo(resource->dc, (int)tx, (int)ty)) {
+        php_error_docref(NULL, E_WARNING, "Failed to draw line: %d", GetLastError());
+    }
 }
 /* }}} */
 
 
 /* {{{ proto void printer_draw_chord(resource handle, int rec_x, int rec_y, int rec_x1, int rec_y1, int rad_x, int rad_y, int rad_x1, int rad_y1)
    Draw a chord*/
-PHP_FUNCTION(printer_draw_chord)
+ZEND_FUNCTION(printer_draw_chord)
 {
-	zval **arg1, **arg2, **arg3, **arg4, **arg5, **arg6, **arg7, **arg8, **arg9;
-	printer *resource;
+    zval *printer_res;
+    zend_long rec_x, rec_y, rec_x1, rec_y1, rad_x, rad_y, rad_x1, rad_y1;
+    printer *resource;
 
-	if( zend_get_parameters_ex(9, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6, &arg7, &arg8, &arg9) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    // Parse parameters: printer resource (required), 8 long values (required)
+    ZEND_PARSE_PARAMETERS_START(9, 9)
+        Z_PARAM_RESOURCE(printer_res)
+        Z_PARAM_LONG(rec_x)
+        Z_PARAM_LONG(rec_y)
+        Z_PARAM_LONG(rec_x1)
+        Z_PARAM_LONG(rec_y1)
+        Z_PARAM_LONG(rad_x)
+        Z_PARAM_LONG(rad_y)
+        Z_PARAM_LONG(rad_x1)
+        Z_PARAM_LONG(rad_y1)
+    ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        return;
+    }
 
-	convert_to_long_ex(arg2);
-	convert_to_long_ex(arg3);
-	convert_to_long_ex(arg4);
-	convert_to_long_ex(arg5);
-	convert_to_long_ex(arg6);
-	convert_to_long_ex(arg7);
-	convert_to_long_ex(arg8);
-	convert_to_long_ex(arg9);
+    // Check if a device context exists
+    if (resource->dc == NULL) {
+        php_error_docref(NULL, E_WARNING, "No DeviceContext available to draw chord");
+        return;
+    }
 
-	Chord(resource->dc, Z_LVAL_PP(arg2), Z_LVAL_PP(arg3), Z_LVAL_PP(arg4), Z_LVAL_PP(arg5), Z_LVAL_PP(arg6), Z_LVAL_PP(arg7), Z_LVAL_PP(arg8), Z_LVAL_PP(arg9));
+    // Draw the chord
+    if (!Chord(resource->dc, (int)rec_x, (int)rec_y, (int)rec_x1, (int)rec_y1,
+               (int)rad_x, (int)rad_y, (int)rad_x1, (int)rad_y1)) {
+        php_error_docref(NULL, E_WARNING, "Failed to draw chord: %d", GetLastError());
+    }
 }
 /* }}} */
 
 
 /* {{{ proto void printer_draw_pie(resource handle, int rec_x, int rec_y, int rec_x1, int rec_y1, int rad1_x, int rad1_y, int rad2_x, int rad2_y)
    Draw a pie*/
-PHP_FUNCTION(printer_draw_pie)
+ZEND_FUNCTION(printer_draw_pie)
 {
-	zval **arg1, **arg2, **arg3, **arg4, **arg5, **arg6, **arg7, **arg8, **arg9;
-	printer *resource;
+    zval *printer_res;
+    zend_long rec_x, rec_y, rec_x1, rec_y1, rad1_x, rad1_y, rad2_x, rad2_y;
+    printer *resource;
 
-	if( zend_get_parameters_ex(9, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6, &arg7, &arg8, &arg9) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    // Parse parameters: printer resource (required), 8 long values (required)
+    ZEND_PARSE_PARAMETERS_START(9, 9)
+        Z_PARAM_RESOURCE(printer_res)
+        Z_PARAM_LONG(rec_x)
+        Z_PARAM_LONG(rec_y)
+        Z_PARAM_LONG(rec_x1)
+        Z_PARAM_LONG(rec_y1)
+        Z_PARAM_LONG(rad1_x)
+        Z_PARAM_LONG(rad1_y)
+        Z_PARAM_LONG(rad2_x)
+        Z_PARAM_LONG(rad2_y)
+    ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        RETURN_FALSE;
+    }
 
-	convert_to_long_ex(arg2);
-	convert_to_long_ex(arg3);
-	convert_to_long_ex(arg4);
-	convert_to_long_ex(arg5);
-	convert_to_long_ex(arg6);
-	convert_to_long_ex(arg7);
-	convert_to_long_ex(arg8);
-	convert_to_long_ex(arg9);
+    // Check if a device context exists
+    if (resource->dc == NULL) {
+        php_error_docref(NULL, E_WARNING, "No DeviceContext available to draw pie");
+        RETURN_FALSE;
+    }
 
-	Pie(resource->dc, Z_LVAL_PP(arg2), Z_LVAL_PP(arg3), Z_LVAL_PP(arg4), Z_LVAL_PP(arg5), Z_LVAL_PP(arg6), Z_LVAL_PP(arg7), Z_LVAL_PP(arg8), Z_LVAL_PP(arg9));
+    // Draw the pie
+    if (Pie(resource->dc, (int)rec_x, (int)rec_y, (int)rec_x1, (int)rec_y1,
+            (int)rad1_x, (int)rad1_y, (int)rad2_x, (int)rad2_y)) {
+        RETURN_TRUE;
+    } else {
+        php_error_docref(NULL, E_WARNING, "Failed to draw pie: %d", GetLastError());
+        RETURN_FALSE;
+    }
 }
 /* }}} */
 
 
 /* {{{ proto mixed printer_draw_bmp(resource handle, string filename, int x, int y [, int width, int height])
    Draw a bitmap */
-PHP_FUNCTION(printer_draw_bmp)
+ZEND_FUNCTION(printer_draw_bmp)
 {
-	zval **arg1, **arg2, **arg3, **arg4, **arg5 = NULL, **arg6 = NULL;
-	printer *resource;
-	HBITMAP hbmp;
-	BITMAP bmp_property;
-	HDC dummy;
-	char* path;
+    zval *printer_res;
+    char *filename;
+    size_t filename_len;
+    zend_long x, y;
+    zend_long width = 0, height = 0;
+    printer *resource;
+    HBITMAP hbmp = NULL;
+    HDC dummy = NULL;
+    BITMAP bmp_property;
 
-	int args = ZEND_NUM_ARGS();
-	switch (args) {
-		case 4:
-			if (zend_get_parameters_ex(4, &arg1, &arg2, &arg3, &arg4) == FAILURE ) {
-				RETURN_FALSE;
-			}
-			break;
-		case 6:
-			if (zend_get_parameters_ex(6, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6) == FAILURE ) {
-				RETURN_FALSE;
-			}
-			convert_to_long_ex(arg5);
-			convert_to_long_ex(arg6);
-			break;
-		default:
-			WRONG_PARAM_COUNT;
-			break;
-	}
+    // Parse parameters: printer resource (required), filename (required), x (required), y (required),
+    // width (optional), height (optional)
+    ZEND_PARSE_PARAMETERS_START(4, 6)
+        Z_PARAM_RESOURCE(printer_res)
+        Z_PARAM_STRING(filename, filename_len)
+        Z_PARAM_LONG(x)
+        Z_PARAM_LONG(y)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(width)
+        Z_PARAM_LONG(height)
+    ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
-	convert_to_string_ex(arg2);
-	convert_to_long_ex(arg3);
-	convert_to_long_ex(arg4);
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        RETURN_FALSE;
+    }
 
-	virtual_filepath(Z_STRVAL_PP(arg2), &path);
+    // Check if a device context exists
+    if (resource->dc == NULL) {
+        php_error_docref(NULL, E_WARNING, "No DeviceContext available to draw bitmap");
+        RETURN_FALSE;
+    }
 
-	hbmp = (HBITMAP)LoadImage(0, path, IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION|LR_LOADFROMFILE);
+    // Resolve virtual file path
+    char *path;
+    virtual_filepath(filename, &path);
 
-	if (hbmp == NULL) {
-		php_error_docref(NULL, E_WARNING, "Failed to load bitmap %s", Z_STRVAL_PP(arg2));
-		RETURN_FALSE;
-	}
+    // Load the bitmap
+    hbmp = (HBITMAP)LoadImageA(0, path, IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION | LR_LOADFROMFILE);
+    if (hbmp == NULL) {
+        php_error_docref(NULL, E_WARNING, "Failed to load bitmap %s: %d", filename, GetLastError());
+        RETURN_FALSE;
+    }
 
-	if (GetObject(hbmp, sizeof(BITMAP), &bmp_property) == 0) {
-		if(hbmp)
-			DeleteObject(hbmp);
-		RETURN_FALSE;
-	}
+    // Get bitmap properties
+    if (GetObject(hbmp, sizeof(BITMAP), &bmp_property) == 0) {
+        php_error_docref(NULL, E_WARNING, "Failed to get bitmap properties: %d", GetLastError());
+        DeleteObject(hbmp);
+        RETURN_FALSE;
+    }
 
-	if (!(GetDeviceCaps(resource->dc, RASTERCAPS) & RC_STRETCHBLT)) {
-		php_error_docref(NULL E_WARNING, "Printer does not support bitmaps");
-		DeleteObject(hbmp);
-		RETURN_FALSE;
-	}
-			
-	if ((dummy = CreateCompatibleDC(resource->dc)) == NULL) {
-		DeleteObject(hbmp);
-		RETURN_FALSE;
-	}
-			
-	if (SelectObject(dummy, hbmp) == NULL) {
-		DeleteDC(dummy);
-		DeleteObject(hbmp);
-		RETURN_FALSE;
-	}
-			
-	
-	if (args > 4) {
-		if (!StretchBlt(resource->dc,(int)Z_LVAL_PP(arg3), (int)Z_LVAL_PP(arg4), (int)Z_LVAL_PP(arg5), (int)Z_LVAL_PP(arg6), dummy, 0, 0, bmp_property.bmWidth,bmp_property.bmHeight, SRCCOPY)) {
-			php_error_docref(NULL E_WARNING, "Printer failed to accept bitmap");
-			DeleteDC(dummy);
-			DeleteObject(hbmp);
-			RETURN_FALSE;
-		}
-	}
-	else {
-		if (!BitBlt(resource->dc, Z_LVAL_PP(arg3), Z_LVAL_PP(arg4), bmp_property.bmWidth, bmp_property.bmHeight, dummy, 0, 0, SRCCOPY)) {
-			php_error_docref(NULL E_WARNING, "Printer failed to accept bitmap");
-			DeleteDC(dummy);
-			DeleteObject(hbmp);
-			RETURN_FALSE;
-		}
-	}
+    // Check printer capabilities
+    if (!(GetDeviceCaps(resource->dc, RASTERCAPS) & RC_STRETCHBLT)) {
+        php_error_docref(NULL, E_WARNING, "Printer does not support bitmaps");
+        DeleteObject(hbmp);
+        RETURN_FALSE;
+    }
 
-	DeleteDC(dummy);
-	DeleteObject(hbmp);
-	RETURN_TRUE;
+    // Create a compatible DC
+    dummy = CreateCompatibleDC(resource->dc);
+    if (dummy == NULL) {
+        php_error_docref(NULL, E_WARNING, "Failed to create compatible DC: %d", GetLastError());
+        DeleteObject(hbmp);
+        RETURN_FALSE;
+    }
+
+    // Select the bitmap into the compatible DC
+    if (SelectObject(dummy, hbmp) == NULL) {
+        php_error_docref(NULL, E_WARNING, "Failed to select bitmap into compatible DC: %d", GetLastError());
+        DeleteDC(dummy);
+        DeleteObject(hbmp);
+        RETURN_FALSE;
+    }
+
+    // Draw the bitmap (with optional stretching)
+    BOOL result;
+    if (width > 0 && height > 0) {
+        result = StretchBlt(resource->dc, (int)x, (int)y, (int)width, (int)height,
+                            dummy, 0, 0, bmp_property.bmWidth, bmp_property.bmHeight, SRCCOPY);
+    } else {
+        result = BitBlt(resource->dc, (int)x, (int)y, bmp_property.bmWidth, bmp_property.bmHeight,
+                        dummy, 0, 0, SRCCOPY);
+    }
+
+    // Clean up
+    DeleteDC(dummy);
+    DeleteObject(hbmp);
+
+    // Check drawing result
+    if (!result) {
+        php_error_docref(NULL, E_WARNING, "Failed to draw bitmap: %d", GetLastError());
+        RETURN_FALSE;
+    }
+
+    RETURN_TRUE;
 }
 /* }}} */
 
 
 /* {{{ proto void printer_abort(resource handle)
    Abort printing*/
-PHP_FUNCTION(printer_abort)
+ZEND_FUNCTION(printer_abort)
 {
-	zval **arg1;
-	printer *resource;
+    zval *printer_res;
+    printer *resource;
 
-	if( zend_get_parameters_ex(1, &arg1) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    // Parse parameters: printer resource (required)
+    ZEND_PARSE_PARAMETERS_START(1, 1)
+        Z_PARAM_RESOURCE(printer_res)
+    ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
-	
-	AbortPrinter(resource->handle);
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        return;
+    }
+
+    // Abort the print job
+    if (!AbortPrinter(resource->handle)) {
+        php_error_docref(NULL, E_WARNING, "Failed to abort print job: %d", GetLastError());
+    }
 }
 /* }}} */
 
