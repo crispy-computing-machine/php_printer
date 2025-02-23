@@ -606,76 +606,87 @@ ZEND_FUNCTION(printer_set_option)
 
 /* {{{ proto mixed printer_get_option(int handle, string option)
    Get configured data */
-PHP_FUNCTION(printer_get_option)
+ZEND_FUNCTION(printer_get_option)
 {
-	zval **arg1, **arg2;
-	printer *resource;
+    zval *printer_res;
+    zend_long option;
+    printer *resource;
 
-	if( zend_get_parameters_ex(2, &arg1, &arg2) == FAILURE ) {
-		WRONG_PARAM_COUNT;
-	}
+    // Parse parameters: resource (required), option (required)
+    ZEND_PARSE_PARAMETERS_START(2, 2)
+        Z_PARAM_RESOURCE(printer_res)
+        Z_PARAM_LONG(option)
+    ZEND_PARSE_PARAMETERS_END();
 
-	ZEND_FETCH_RESOURCE(resource, printer *, arg1, -1, "Printer Handle", le_printer);
-	convert_to_long_ex(arg2);
+    // Fetch the printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        RETURN_FALSE;
+    }
 
-	switch(Z_LVAL_PP(arg2)) {
-		case COPIES:
-			RETURN_LONG(resource->pi2->pDevMode->dmCopies);
+    // Handle each option
+    switch (option) {
+        case COPIES:
+            RETURN_LONG(resource->pi2->pDevMode->dmCopies);
 
-		case MODE:
-			RETURN_STRING((char*)resource->info.lpszDatatype,1);
+        case MODE:
+            RETURN_STRING(resource->info.pDatatype ? resource->info.pDatatype : "");
 
-		case TITLE:
-			RETURN_STRING((char*)resource->info.lpszDocName,1);
+        case TITLE:
+            RETURN_STRING(resource->info.pDocName ? resource->info.pDocName : "");
 
-		case OUTPUT_FILE:
-			if (resource->info.lpszOutput) {
-				RETURN_STRING((char*)resource->info.lpszOutput,1);
-			}
-			else {
-				RETURN_NULL();
-			}
+        case OUTPUT_FILE:
+            if (resource->info.pOutputFile) {
+                RETURN_STRING(resource->info.pOutputFile);
+            } else {
+                RETURN_NULL();
+            }
 
-		case ORIENTATION:
-			RETURN_LONG(resource->pi2->pDevMode->dmOrientation);
+        case ORIENTATION:
+            RETURN_LONG(resource->pi2->pDevMode->dmOrientation);
 
-		case YRESOLUTION:
-			RETURN_LONG(resource->pi2->pDevMode->dmYResolution);
-		
-		case XRESOLUTION:
-			RETURN_LONG(resource->pi2->pDevMode->dmPrintQuality);
+        case YRESOLUTION:
+            RETURN_LONG(resource->pi2->pDevMode->dmYResolution);
 
-		case PAPER_FORMAT:
-			RETURN_LONG(resource->pi2->pDevMode->dmPaperSize);
+        case XRESOLUTION:
+            RETURN_LONG(resource->pi2->pDevMode->dmPrintQuality);
 
-		case PAPER_LENGTH:
-			RETURN_LONG(resource->pi2->pDevMode->dmPaperLength / 10);
+        case PAPER_FORMAT:
+            RETURN_LONG(resource->pi2->pDevMode->dmPaperSize);
 
-		case PAPER_WIDTH:
-			RETURN_LONG(resource->pi2->pDevMode->dmPaperWidth / 10);
+        case PAPER_LENGTH:
+            RETURN_LONG(resource->pi2->pDevMode->dmPaperLength / 10);
 
-		case SCALE:
-			RETURN_LONG(resource->pi2->pDevMode->dmScale);
+        case PAPER_WIDTH:
+            RETURN_LONG(resource->pi2->pDevMode->dmPaperWidth / 10);
 
-		case BG_COLOR:
-			RETURN_STRING(rgb_to_hex(GetBkColor(resource->dc)), 0);
+        case SCALE:
+            RETURN_LONG(resource->pi2->pDevMode->dmScale);
 
-		case TEXT_COLOR:
-			RETURN_STRING(rgb_to_hex(GetTextColor(resource->dc)), 0);
+        case BG_COLOR: {
+            char *hex = rgb_to_hex(GetBkColor(resource->dc));
+            RETURN_STRING(hex); // hex is allocated by rgb_to_hex, will be freed by Zend
+        }
 
-		case TEXT_ALIGN:
-			RETURN_LONG(GetTextAlign(resource->dc));
+        case TEXT_COLOR: {
+            char *hex = rgb_to_hex(GetTextColor(resource->dc));
+            RETURN_STRING(hex);
+        }
 
-		case DEVICENAME:
-			RETURN_STRING(resource->name, 1);
+        case TEXT_ALIGN:
+            RETURN_LONG(GetTextAlign(resource->dc));
 
-		case DRIVER_VERSION:
-			RETURN_LONG(resource->pi2->pDevMode->dmDriverVersion);
+        case DEVICENAME:
+            RETURN_STRING(resource->name ? resource->name : "");
 
-		default:
-			php_error_docref(NULL E_WARNING, "unknown option passed to printer_get_option()");
-			RETURN_FALSE;
-	}
+        case DRIVER_VERSION:
+            RETURN_LONG(resource->pi2->pDevMode->dmDriverVersion);
+
+        default:
+            php_error_docref(NULL, E_WARNING, "Unknown option passed to printer_get_option(): %ld", option);
+            RETURN_FALSE;
+    }
 }
 /* }}} */
 
