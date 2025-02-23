@@ -152,10 +152,6 @@ PHP_INI_END()
 #define BRUSH_SOLID		-1
 #define BRUSH_CUSTOM	-2
 
-ZEND_BEGIN_MODULE_GLOBALS(printer)
-    char *default_printer;
-ZEND_END_MODULE_GLOBALS(printer)
-
 #define REGP_CONSTANT(a,b)	REGISTER_LONG_CONSTANT(a, b, CONST_CS | CONST_PERSISTENT);
 
 static void php_printer_init(zend_printer_globals *printer_globals) {
