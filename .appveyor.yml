@@ -44,7 +44,7 @@ environment:
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2022
       ARCH: x64
       VC: vs17
-      PHP_VER: 8.4.1
+      PHP_VER: 8.4.4
       TS: 1
 
 build_script:
