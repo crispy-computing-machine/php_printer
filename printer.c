@@ -441,7 +441,7 @@ ZEND_FUNCTION(printer_list)
     EnumPrintersA(enum_type, name, level, NULL, 0, &bNeeded, &cReturned);
     if (bNeeded == 0) {
         // No printers found or error, return empty array
-        return;
+        RETURN_FALSE;
     }
 
     // Allocate buffer
@@ -760,7 +760,7 @@ ZEND_FUNCTION(printer_create_dc)
     resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
     if (!resource) {
         php_error_docref(NULL, E_WARNING, "Invalid printer resource");
-        return; // No return value expected, so just return
+        RETURN_FALSE; // No return value expected, so just return
     }
 
     // Delete old device context if it exists
@@ -774,6 +774,7 @@ ZEND_FUNCTION(printer_create_dc)
     if (resource->dc == NULL) {
         php_error_docref(NULL, E_WARNING, "Failed to create new DeviceContext: %d", GetLastError());
     }
+    RETURN_TRUE;
 }
 /* }}} */
 
@@ -1051,24 +1052,25 @@ ZEND_FUNCTION(printer_select_pen)
     resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
     if (!resource) {
         php_error_docref(NULL, E_WARNING, "Invalid printer resource");
-        return;
+        RETURN_FALSE;
     }
 
     // Fetch the pen resource
     pen = zend_fetch_resource(Z_RES_P(pen_res), "Pen Handle", le_pen);
     if (!pen) {
         php_error_docref(NULL, E_WARNING, "Invalid pen resource");
-        return;
+        RETURN_FALSE;
     }
 
     // Check if a device context exists
     if (resource->dc == NULL) {
         php_error_docref(NULL, E_WARNING, "No DeviceContext available to select pen");
-        return;
+        RETURN_FALSE;
     }
 
     // Select the pen into the device context
     SelectObject(resource->dc, pen);
+    RETURN_TRUE;
 }
 /* }}} */
 
@@ -1141,11 +1143,12 @@ ZEND_FUNCTION(printer_delete_brush)
     brush = zend_fetch_resource(Z_RES_P(brush_res), "Brush Handle", le_brush);
     if (!brush) {
         php_error_docref(NULL, E_WARNING, "Invalid brush resource");
-        return; // Void return, consistent with original
+        RETURN_FALSE; // Void return, consistent with original
     }
 
     // Delete the brush resource
     zend_list_close(Z_RES_P(brush_res));
+    RETURN_TRUE;
 }
 /* }}} */
 
@@ -1168,24 +1171,25 @@ ZEND_FUNCTION(printer_select_brush)
     resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
     if (!resource) {
         php_error_docref(NULL, E_WARNING, "Invalid printer resource");
-        return;
+        RETURN_FALSE;
     }
 
     // Fetch the brush resource
     brush = zend_fetch_resource(Z_RES_P(brush_res), "Brush Handle", le_brush);
     if (!brush) {
         php_error_docref(NULL, E_WARNING, "Invalid brush resource");
-        return;
+        RETURN_FALSE;
     }
 
     // Check if a device context exists
     if (resource->dc == NULL) {
         php_error_docref(NULL, E_WARNING, "No DeviceContext available to select brush");
-        return;
+        RETURN_FALSE;
     }
 
     // Select the brush into the device context
     SelectObject(resource->dc, brush);
+    RETURN_TRUE;
 }
 /* }}} */
 
@@ -1266,11 +1270,12 @@ ZEND_FUNCTION(printer_delete_font)
     font = zend_fetch_resource(Z_RES_P(font_res), "Font Handle", le_font);
     if (!font) {
         php_error_docref(NULL, E_WARNING, "Invalid font resource");
-        return; // Void return, consistent with original
+        RETURN_FALSE; // Void return, consistent with original
     }
 
     // Delete the font resource
     zend_list_close(Z_RES_P(font_res));
+    RETURN_TRUE;
 }
 /* }}} */
 
@@ -1293,24 +1298,25 @@ ZEND_FUNCTION(printer_select_font)
     resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
     if (!resource) {
         php_error_docref(NULL, E_WARNING, "Invalid printer resource");
-        return;
+        RETURN_FALSE;
     }
 
     // Fetch the font resource
     font = zend_fetch_resource(Z_RES_P(font_res), "Font Handle", le_font);
     if (!font) {
         php_error_docref(NULL, E_WARNING, "Invalid font resource");
-        return;
+        RETURN_FALSE;
     }
 
     // Check if a device context exists
     if (resource->dc == NULL) {
         php_error_docref(NULL, E_WARNING, "No DeviceContext available to select font");
-        return;
+        RETURN_FALSE;
     }
 
     // Select the font into the device context
     SelectObject(resource->dc, font);
+    RETURN_TRUE;
 }
 /* }}} */
 
@@ -1377,19 +1383,22 @@ ZEND_FUNCTION(printer_draw_roundrect)
     resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
     if (!resource) {
         php_error_docref(NULL, E_WARNING, "Invalid printer resource");
-        return;
+        RETURN_FALSE;
     }
 
     // Check if a device context exists
     if (resource->dc == NULL) {
         php_error_docref(NULL, E_WARNING, "No DeviceContext available to draw roundrect");
-        return;
+        RETURN_FALSE;
     }
 
     // Draw the rounded rectangle
     if (!RoundRect(resource->dc, (int)ul_x, (int)ul_y, (int)lr_x, (int)lr_y, (int)width, (int)height)) {
         php_error_docref(NULL, E_WARNING, "Failed to draw roundrect: %d", GetLastError());
+        RETURN_FALSE;
     }
+
+    RETURN_TRUE;
 }
 /* }}} */
 
@@ -1415,19 +1424,22 @@ ZEND_FUNCTION(printer_draw_rectangle)
     resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
     if (!resource) {
         php_error_docref(NULL, E_WARNING, "Invalid printer resource");
-        return;
+        RETURN_FALSE;
     }
 
     // Check if a device context exists
     if (resource->dc == NULL) {
         php_error_docref(NULL, E_WARNING, "No DeviceContext available to draw rectangle");
-        return;
+        RETURN_FALSE;
     }
 
     // Draw the rectangle
     if (!Rectangle(resource->dc, (int)ul_x, (int)ul_y, (int)lr_x, (int)lr_y)) {
         php_error_docref(NULL, E_WARNING, "Failed to draw rectangle: %d", GetLastError());
+        RETURN_FALSE;
     }
+
+    RETURN_TRUE;
 }
 /* }}} */
 
@@ -1453,19 +1465,22 @@ ZEND_FUNCTION(printer_draw_elipse)
     resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
     if (!resource) {
         php_error_docref(NULL, E_WARNING, "Invalid printer resource");
-        return;
+        RETURN_FALSE;
     }
 
     // Check if a device context exists
     if (resource->dc == NULL) {
         php_error_docref(NULL, E_WARNING, "No DeviceContext available to draw ellipse");
-        return;
+        RETURN_FALSE;
     }
 
     // Draw the ellipse
     if (!Ellipse(resource->dc, (int)ul_x, (int)ul_y, (int)lr_x, (int)lr_y)) {
         php_error_docref(NULL, E_WARNING, "Failed to draw ellipse: %d", GetLastError());
+        RETURN_FALSE;
     }
+
+    RETURN_TRUE;
 }
 /* }}} */
 
@@ -1492,19 +1507,22 @@ ZEND_FUNCTION(printer_draw_text)
     resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
     if (!resource) {
         php_error_docref(NULL, E_WARNING, "Invalid printer resource");
-        return;
+        RETURN_FALSE;
     }
 
     // Check if a device context exists
     if (resource->dc == NULL) {
         php_error_docref(NULL, E_WARNING, "No DeviceContext available to draw text");
-        return;
+        RETURN_FALSE;
     }
 
     // Draw the text
     if (!ExtTextOutA(resource->dc, (int)x, (int)y, ETO_OPAQUE, NULL, text, (UINT)text_len, NULL)) {
         php_error_docref(NULL, E_WARNING, "Failed to draw text: %d", GetLastError());
+        RETURN_FALSE;
     }
+
+    RETURN_TRUE;
 }
 /* }}} */
 
@@ -1530,23 +1548,26 @@ ZEND_FUNCTION(printer_draw_line)
     resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
     if (!resource) {
         php_error_docref(NULL, E_WARNING, "Invalid printer resource");
-        return;
+        RETURN_FALSE;
     }
 
     // Check if a device context exists
     if (resource->dc == NULL) {
         php_error_docref(NULL, E_WARNING, "No DeviceContext available to draw line");
-        return;
+        RETURN_FALSE;
     }
 
     // Draw the line
     if (!MoveToEx(resource->dc, (int)fx, (int)fy, NULL)) {
         php_error_docref(NULL, E_WARNING, "Failed to set starting point for line: %d", GetLastError());
-        return;
+        RETURN_FALSE;
     }
     if (!LineTo(resource->dc, (int)tx, (int)ty)) {
         php_error_docref(NULL, E_WARNING, "Failed to draw line: %d", GetLastError());
+        RETURN_FALSE;
     }
+
+    RETURN_TRUE;
 }
 /* }}} */
 
@@ -1576,20 +1597,21 @@ ZEND_FUNCTION(printer_draw_chord)
     resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
     if (!resource) {
         php_error_docref(NULL, E_WARNING, "Invalid printer resource");
-        return;
+        RETURN_FALSE;
     }
 
     // Check if a device context exists
     if (resource->dc == NULL) {
         php_error_docref(NULL, E_WARNING, "No DeviceContext available to draw chord");
-        return;
+        RETURN_FALSE;
     }
 
     // Draw the chord
-    if (!Chord(resource->dc, (int)rec_x, (int)rec_y, (int)rec_x1, (int)rec_y1,
-               (int)rad_x, (int)rad_y, (int)rad_x1, (int)rad_y1)) {
+    if (!Chord(resource->dc, (int)rec_x, (int)rec_y, (int)rec_x1, (int)rec_y1, (int)rad_x, (int)rad_y, (int)rad_x1, (int)rad_y1)) {
         php_error_docref(NULL, E_WARNING, "Failed to draw chord: %d", GetLastError());
+        RETURN_FALSE;
     }
+    RETURN_TRUE;
 }
 /* }}} */
 
@@ -1629,8 +1651,7 @@ ZEND_FUNCTION(printer_draw_pie)
     }
 
     // Draw the pie
-    if (Pie(resource->dc, (int)rec_x, (int)rec_y, (int)rec_x1, (int)rec_y1,
-            (int)rad1_x, (int)rad1_y, (int)rad2_x, (int)rad2_y)) {
+    if (Pie(resource->dc, (int)rec_x, (int)rec_y, (int)rec_x1, (int)rec_y1, (int)rad1_x, (int)rad1_y, (int)rad2_x, (int)rad2_y)) {
         RETURN_TRUE;
     } else {
         php_error_docref(NULL, E_WARNING, "Failed to draw pie: %d", GetLastError());
@@ -1761,13 +1782,14 @@ ZEND_FUNCTION(printer_abort)
     resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
     if (!resource) {
         php_error_docref(NULL, E_WARNING, "Invalid printer resource");
-        return;
+        RETURN_FALSE;
     }
 
     // Abort the print job
     if (!AbortPrinter(resource->handle)) {
         php_error_docref(NULL, E_WARNING, "Failed to abort print job: %d", GetLastError());
     }
+    RETURN_TRUE;
 }
 /* }}} */
 
