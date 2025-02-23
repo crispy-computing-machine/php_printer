@@ -62,7 +62,7 @@ ZEND_FUNCTION(printer_logical_fontheight);
 ZEND_FUNCTION(printer_draw_roundrect);
 ZEND_FUNCTION(printer_draw_rectangle);
 ZEND_FUNCTION(printer_draw_text);
-ZEND_FUNCTION(printer_draw_elipse);
+ZEND_FUNCTION(printer_draw_ellipse);
 ZEND_FUNCTION(printer_draw_line);
 ZEND_FUNCTION(printer_draw_chord);
 ZEND_FUNCTION(printer_draw_pie);
