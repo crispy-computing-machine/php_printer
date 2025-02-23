@@ -1801,28 +1801,32 @@ char *rgb_to_hex(COLORREF rgb)
 	return string;
 } 
 
-static void printer_close(zend_rsrc_list_entry *resource)
+static void printer_dtor(zend_resource *rsrc)
 {
-	printer *p = (printer*)resource->ptr;
+    printer *p = (printer *)rsrc->ptr;
 
-	ClosePrinter(p->handle);
-	if (p->gdi_info.lpszDocName) {
-		efree((char *)p->gdi_info.lpszDocName);
-	}
-	if (p->info.lpszOutput) {
-		efree((char *)p->info.lpszOutput);
-	}
-	if (p->info.lpszDatatype) {
-		efree((char *)p->info.lpszDatatype);
-	}
-	if (p->pi2) {
-		if (p->pi2->pDevMode) {
-			efree((char *)p->pi2->pDevMode);
-		}
-		efree((char *)p->pi2);
-	}
-	efree(p);
+    ClosePrinter(p->handle);
+    if (p->gdi_info.lpszDocName) {
+        efree((char *)p->gdi_info.lpszDocName);
+    }
+    if (p->spooler_info.pOutputFile) { // Updated from info.lpszOutput to spooler_info.pOutputFile
+        efree((char *)p->spooler_info.pOutputFile);
+    }
+    if (p->spooler_info.pDatatype) {   // Updated from info.lpszDatatype to spooler_info.pDatatype
+        efree((char *)p->spooler_info.pDatatype);
+    }
+    if (p->pi2) {
+        if (p->pi2->pDevMode) {
+            efree((char *)p->pi2->pDevMode);
+        }
+        efree((char *)p->pi2);
+    }
+    if (p->dc) {
+        DeleteDC(p->dc); // Clean up DC if it exists
+    }
+    efree(p);
 }
+
 static void object_close(zend_rsrc_list_entry *resource)
 {
 	HGDIOBJ p = (HGDIOBJ)resource->ptr;
