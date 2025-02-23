@@ -42,6 +42,15 @@ static int le_printer, le_brush, le_pen, le_font;
 
 #include "php_printer.h"
 
+typedef struct _printer {
+    HANDLE handle;
+    PRINTER_INFO_2 *pi2;
+    DOC_INFO_1 info;
+    HDC dc;
+    char *name;
+    DWORD dmModifiedFields;
+} printer;
+
 COLORREF hex_to_rgb(char * hex);
 char *rgb_to_hex(COLORREF rgb);
 static void printer_dtor(zend_resource *rsrc);
