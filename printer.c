@@ -286,9 +286,9 @@ ZEND_FUNCTION(printer_open)
         resource->pi2 = emalloc(sizeof(PRINTER_INFO_2));
         resource->pi2->pDevMode = emalloc(DocumentPropertiesA(NULL, NULL, resource->name, NULL, NULL, 0));
         if (DocumentPropertiesA(NULL, resource->handle, resource->name, resource->pi2->pDevMode, NULL, DM_OUT_BUFFER) == IDOK) {
-            resource->info.pDocName = estrdup("PHP generated Document");
-            resource->info.pOutputFile = NULL;
-            resource->info.pDatatype = estrdup("TEXT");
+            resource->spooler_info.pDocName = estrdup("PHP generated Document");
+            resource->spooler_info.pOutputFile = NULL;
+            resource->spooler_info.pDatatype = estrdup("TEXT");
             // Remove fwType and cbSize as they don't exist in DOC_INFO_1
             resource->dc = CreateDCA(NULL, resource->name, NULL, resource->pi2->pDevMode);
             RETURN_RES(zend_register_resource(resource, le_printer));
@@ -341,9 +341,9 @@ ZEND_FUNCTION(printer_write)
         RETURN_FALSE;
     }
 
-    docinfo.pDocName = resource->info.pDocName;
-    docinfo.pOutputFile = resource->info.pOutputFile;
-    docinfo.pDatatype = resource->info.pDatatype;
+    docinfo.pDocName = resource->spooler_info.pDocName;
+    docinfo.pOutputFile = resource->spooler_info.pOutputFile;
+    docinfo.pDatatype = resource->spooler_info.pDatatype;
 
     if (StartDocPrinterA(resource->handle, 1, (LPBYTE)&docinfo) && StartPagePrinter(resource->handle)) {
         WritePrinter(resource->handle, content, content_len, &received);
@@ -515,26 +515,26 @@ ZEND_FUNCTION(printer_set_option)
 
         case MODE:
             ZVAL_STRING(value, zval_get_string(value)); // Ensure string
-            if (resource->info.pDatatype) {
-                efree((char *)resource->info.pDatatype);
+            if (resource->spooler_info.pDatatype) {
+                efree((char *)resource->spooler_info.pDatatype);
             }
-            resource->info.pDatatype = estrdup(Z_STRVAL_P(value));
+            resource->spooler_info.pDatatype = estrdup(Z_STRVAL_P(value));
             break;
 
         case TITLE:
             ZVAL_STRING(value, zval_get_string(value));
-            if (resource->info.pDocName) {
-                efree((char *)resource->info.pDocName);
+            if (resource->spooler_info.pDocName) {
+                efree((char *)resource->spooler_info.pDocName);
             }
-            resource->info.pDocName = estrdup(Z_STRVAL_P(value));
+            resource->spooler_info.pDocName = estrdup(Z_STRVAL_P(value));
             break;
 
         case OUTPUT_FILE:
             ZVAL_STRING(value, zval_get_string(value));
-            if (resource->info.pOutputFile) {
-                efree((char *)resource->info.pOutputFile);
+            if (resource->spooler_info.pOutputFile) {
+                efree((char *)resource->spooler_info.pOutputFile);
             }
-            resource->info.pOutputFile = estrdup(Z_STRVAL_P(value));
+            resource->spooler_info.pOutputFile = estrdup(Z_STRVAL_P(value));
             break;
 
         case ORIENTATION:
@@ -640,14 +640,14 @@ ZEND_FUNCTION(printer_get_option)
             RETURN_LONG(resource->pi2->pDevMode->dmCopies);
 
         case MODE:
-            RETURN_STRING(resource->info.pDatatype ? resource->info.pDatatype : "");
+            RETURN_STRING(resource->spooler_info.pDatatype ? resource->spooler_info.pDatatype : "");
 
         case TITLE:
-            RETURN_STRING(resource->info.pDocName ? resource->info.pDocName : "");
+            RETURN_STRING(resource->spooler_info.pDocName ? resource->spooler_info.pDocName : "");
 
         case OUTPUT_FILE:
-            if (resource->info.pOutputFile) {
-                RETURN_STRING(resource->info.pOutputFile);
+            if (resource->spooler_info.pOutputFile) {
+                RETURN_STRING(resource->spooler_info.pOutputFile);
             } else {
                 RETURN_NULL();
             }
@@ -1806,8 +1806,8 @@ static void printer_close(zend_rsrc_list_entry *resource)
 	printer *p = (printer*)resource->ptr;
 
 	ClosePrinter(p->handle);
-	if (p->info.lpszDocName) {
-		efree((char *)p->info.lpszDocName);
+	if (p->gdi_info.lpszDocName) {
+		efree((char *)p->gdi_info.lpszDocName);
 	}
 	if (p->info.lpszOutput) {
 		efree((char *)p->info.lpszOutput);

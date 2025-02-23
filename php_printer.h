@@ -71,8 +71,8 @@ PHP_FUNCTION(printer_abort);
 typedef struct _printer {
     HANDLE handle;
     PRINTER_INFO_2 *pi2;
-    DOC_INFO_1 spooler_info; // For spooler functions like StartDocPrinter
-    DOCINFOA gdi_info;       // For GDI functions like StartDoc
+    DOC_INFO_1 spooler_info; // For spooler operations (e.g., printer_write)
+    DOCINFOA gdi_info;       // For GDI operations (e.g., printer_start_doc)
     HDC dc;
     char *name;
     DWORD dmModifiedFields;
