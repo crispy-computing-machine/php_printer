@@ -1,0 +1,105 @@
+version: "{branch}.build.{build}"
+skip_tags: true
+
+branches:
+  only:
+    - develop
+
+clone_folder:  c:\projects\php_printer
+
+install:
+  ps: |
+
+    echo "Build cache directory c:\build-cache"
+    if (-not (Test-Path c:\build-cache)) {
+            mkdir c:\build-cache
+    }
+
+    echo "Download PHP 8 binary tools"
+    $bname = 'php-sdk-binary-tools-php-sdk-' + $env:BIN_SDK_VER + '.zip'
+    $bpath = 'php-sdk-' + $env:BIN_SDK_VER
+    echo "Downloading: https://github.com/php/php-sdk-binary-tools/releases/download/$bpath/$bname"
+    if (-not (Test-Path c:\build-cache\$bname)) {
+            Invoke-WebRequest "https://github.com/php/php-sdk-binary-tools/releases/download/$bpath/$bname" -OutFile "c:\build-cache\$bname"
+    }
+    $dname0 = 'php-sdk-binary-tools-php-sdk-' + $env:BIN_SDK_VER
+    $dname1 = 'php-sdk-' + $env:BIN_SDK_VER
+    if (-not (Test-Path c:\build-cache\$dname1)) {
+            7z x c:\build-cache\$bname -oc:\build-cache
+            # Sleep 5 seconds (process cannot access the file)
+            Start-Sleep -s 5
+            move c:\build-cache\$dname0 c:\build-cache\$dname1
+    }
+
+    echo "Copy GIT files to SRC build directory"
+    xcopy c:\projects\php_printer C:\projects\php-src\ext\php_printer\ /s /e /y /f
+
+cache:
+  c:\build-cache -> .appveyor.yml
+
+environment:
+  BIN_SDK_VER: 2.3.0
+  PTHREADS_VER: 2.9.1
+  matrix:
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2022
+      ARCH: x64
+      VC: vs17
+      PHP_VER: 8.4.1
+      TS: 1
+
+build_script:
+  ps: |
+
+    $ts_part = ''
+    if ('0' -eq $env:TS) { $ts_part = '-nts' }
+    $bname = 'php-devel-pack-' + $env:PHP_VER + $ts_part + '-Win32-' + $env:VC.toUpper() + '-' + $env:ARCH + '.zip'
+    echo "Download PHP8 development pack from release http://windows.php.net/downloads/releases/$bname"
+    if (-not (Test-Path c:\build-cache\$bname)) {
+            Invoke-WebRequest "http://windows.php.net/downloads/releases/$bname" -OutFile "c:\build-cache\$bname" -UserAgent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0'
+            if (-not (Test-Path c:\build-cache\$bname)) {
+                    Invoke-WebRequest "http://windows.php.net/downloads/releases/$bname" -OutFile "c:\build-cache\$bname" -UserAgent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0'
+            }
+    }
+    
+    $dname0 = 'php-' + $env:PHP_VER + '-devel-' + $env:VC.toUpper() + '-' + $env:ARCH
+    $dname1 = 'php-' + $env:PHP_VER + $ts_part + '-devel-' + $env:VC.toUpper() + '-' + $env:ARCH
+    if (-not (Test-Path c:\build-cache\$dname1)) {
+            7z x c:\build-cache\$bname -oc:\build-cache
+            # Same directory???
+            #echo Moving c:\build-cache\$dname0 to c:\build-cache\$dname1
+            #move c:\build-cache\$dname0 c:\build-cache\$dname1
+    }
+
+    echo "Main build process..."
+    cd c:\projects\php_printer
+    
+    $env:PATH = 'c:\build-cache\' + $dname1 + ';' + $env:PATH
+    echo "" | Out-File -Encoding "ASCII" task.bat
+    echo "call phpize 2>&1" | Out-File -Encoding "ASCII" -Append task.bat
+    $conf_cmd = 'call configure --with-printer=shared --enable-debug 2>&1'
+    echo $conf_cmd | Out-File -Encoding "ASCII" -Append task.bat
+    echo "nmake /nologo 2>&1" | Out-File -Encoding "ASCII" -Append task.bat
+    echo "exit %errorlevel%" | Out-File -Encoding "ASCII" -Append task.bat
+    $here = (Get-Item -Path "." -Verbose).FullName
+    $runner = 'c:\build-cache\php-sdk-' + $env:BIN_SDK_VER + '\phpsdk' + '-' + $env:VC + '-' + $env:ARCH + '.bat'
+    $task = $here + '\task.bat'
+    & $runner -t $task
+
+after_build:
+  ps: |
+
+    echo "Build download archive of build extension and save as artifact..."
+    $ts_part = 'ts'
+    if ('0' -eq $env:TS) { $ts_part = '-nts' }
+    $zip_bname = 'php_printer-' + $env:APPVEYOR_REPO_COMMIT.substring(0, 8) + '-' + $env:PHP_VER.substring(0, 3) + '-' + $ts_part + '-' + $env:VC + '-' + $env:ARCH + '.zip'
+    $dir = 'c:\projects\php_printer\';
+    if ('x64' -eq $env:ARCH) { $dir = $dir + 'x64\' }
+    $dir = $dir + 'Release'
+    if ('1' -eq $env:TS) { $dir = $dir + '_TS' }
+    & 7z a c:\$zip_bname $dir\php_printer.dll
+    Push-AppveyorArtifact c:\$zip_bname
+
+test_script:
+  ps: |
+
+    echo "Start tests..."
