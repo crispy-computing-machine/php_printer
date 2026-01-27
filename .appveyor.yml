@@ -53,6 +53,22 @@ build_script:
 
     $sdk_root   = 'c:\build-cache\php-sdk-' + $env:BIN_SDK_VER
     $deps_dir   = 'c:\build-cache\deps-' + $env:PHP_VER.substring(0,3) + '-' + $env:VC + '-' + $env:ARCH + $ts_part
+    $php_src_dir = 'c:\projects\php-src'
+
+    # Download PHP source if not present
+    if (-not (Test-Path $php_src_dir)) {
+            echo "Downloading PHP source..."
+            $php_branch = $env:PHP_VER.substring(0,3) + '.x'  # e.g., 8.4.x
+            git clone --depth 1 --branch PHP-$env:PHP_VER https://github.com/php/php-src.git $php_src_dir
+            if ($LASTEXITCODE -ne 0) {
+                echo "Trying to clone branch $php_branch instead..."
+                git clone --depth 1 --branch $php_branch https://github.com/php/php-src.git $php_src_dir
+            }
+    }
+
+    # Copy extension source to PHP ext dir (again, in case it wasn't done in install)
+    echo "Copying extension source to PHP ext dir..."
+    xcopy c:\projects\php_printer $php_src_dir\ext\php_printer\ /s /e /y /i /f
 
     # Download devel-pack (headers + libs reference)
     $bname = 'php-devel-pack-' + $env:PHP_VER + $ts_part + '-Win32-' + $env:VC.toUpper() + '-' + $env:ARCH + '.zip'
@@ -68,22 +84,51 @@ build_script:
     # Create a batch script with all build commands
     $build_script_path = "c:\build-cache\build-commands.bat"
     $script_content = "@echo off`r`n"
-    $script_content += "cd c:\projects\php-src`r`n"
+    $script_content += "echo ====================================`r`n"
+    $script_content += "echo Starting PHP Extension Build`r`n"
+    $script_content += "echo ====================================`r`n"
+    $script_content += "cd /d c:\projects\php-src`r`n"
+    $script_content += "if errorlevel 1 (`r`n"
+    $script_content += "    echo ERROR: Failed to change directory to c:\projects\php-src`r`n"
+    $script_content += "    exit /b 1`r`n"
+    $script_content += ")`r`n"
+    $script_content += "`r`n"
+    $script_content += "echo.`r`n"
     $script_content += "echo Running phpsdk_deps...`r`n"
     $script_content += "phpsdk_deps --update --branch $($env:PHP_VER.substring(0,3)) --deps $deps_dir --stability stable`r`n"
-    $script_content += "if errorlevel 1 exit /b 1`r`n"
+    $script_content += "if errorlevel 1 (`r`n"
+    $script_content += "    echo ERROR: phpsdk_deps failed`r`n"
+    $script_content += "    exit /b 1`r`n"
+    $script_content += ")`r`n"
     $script_content += "`r`n"
+    $script_content += "echo.`r`n"
     $script_content += "echo Running buildconf...`r`n"
     $script_content += "buildconf.bat --force`r`n"
-    $script_content += "if errorlevel 1 exit /b 1`r`n"
+    $script_content += "if errorlevel 1 (`r`n"
+    $script_content += "    echo ERROR: buildconf failed`r`n"
+    $script_content += "    exit /b 1`r`n"
+    $script_content += ")`r`n"
     $script_content += "`r`n"
+    $script_content += "echo.`r`n"
     $script_content += "echo Running configure...`r`n"
     $script_content += "configure.bat --enable-printer=shared --enable-debug --with-php-build=`"$deps_dir`" --disable-test-ini`r`n"
-    $script_content += "if errorlevel 1 exit /b 1`r`n"
+    $script_content += "if errorlevel 1 (`r`n"
+    $script_content += "    echo ERROR: configure failed`r`n"
+    $script_content += "    exit /b 1`r`n"
+    $script_content += ")`r`n"
     $script_content += "`r`n"
+    $script_content += "echo.`r`n"
     $script_content += "echo Running nmake...`r`n"
     $script_content += "nmake /NOLOGO`r`n"
-    $script_content += "if errorlevel 1 exit /b 1`r`n"
+    $script_content += "if errorlevel 1 (`r`n"
+    $script_content += "    echo ERROR: nmake failed`r`n"
+    $script_content += "    exit /b 1`r`n"
+    $script_content += ")`r`n"
+    $script_content += "`r`n"
+    $script_content += "echo.`r`n"
+    $script_content += "echo ====================================`r`n"
+    $script_content += "echo Build completed successfully!`r`n"
+    $script_content += "echo ====================================`r`n"
     [System.IO.File]::WriteAllText($build_script_path, $script_content)
 
     # Execute the build script within the SDK environment
