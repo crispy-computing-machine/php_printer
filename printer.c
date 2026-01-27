@@ -1796,10 +1796,8 @@ ZEND_FUNCTION(printer_draw_image)
         RETURN_FALSE;
     }
 
-    // Resolve virtual file path (same as original function)
     virtual_filepath(filename, &path);
 
-    // Convert path to wide string (GDI+ Image constructor expects wchar_t*)
     int wlen = MultiByteToWideChar(CP_ACP, 0, path, -1, NULL, 0);
     if (wlen == 0) {
         php_error_docref(NULL, E_WARNING, "Failed to convert filename to wide string: %d", GetLastError());
@@ -1808,11 +1806,10 @@ ZEND_FUNCTION(printer_draw_image)
     wchar_t *wpath = (wchar_t *)emalloc(wlen * sizeof(wchar_t));
     MultiByteToWideChar(CP_ACP, 0, path, -1, wpath, wlen);
 
-    // Load image with GDI+
-    Gdiplus::Image *image = new Gdiplus::Image(wpath);
+    Image *image = new Image(wpath);
     efree(wpath);
 
-    if (image->GetLastStatus() != Gdiplus::Ok) {
+    if (image->GetLastStatus() != Ok) {
         php_error_docref(NULL, E_WARNING, "Failed to load image '%s' (GDI+ status: %d)", filename, image->GetLastStatus());
         delete image;
         RETURN_FALSE;
@@ -1821,35 +1818,27 @@ ZEND_FUNCTION(printer_draw_image)
     UINT img_width = image->GetWidth();
     UINT img_height = image->GetHeight();
 
-    // Create Graphics object from printer DC
-    Gdiplus::Graphics graphics(resource->dc);
-    if (graphics.GetLastStatus() != Gdiplus::Ok) {
+    Graphics graphics(resource->dc);
+    if (graphics.GetLastStatus() != Ok) {
         php_error_docref(NULL, E_WARNING, "Failed to create Graphics object from printer DC");
         delete image;
         RETURN_FALSE;
     }
 
-    // Determine destination size (match original behavior: stretch only if both width and height > 0)
     INT dest_width  = (width > 0 && height > 0) ? (INT)width  : (INT)img_width;
     INT dest_height = (width > 0 && height > 0) ? (INT)height : (INT)img_height;
 
-    // Draw (this overload stretches the entire source image to the destination rectangle)
-    Gdiplus::Status stat = graphics.DrawImage(image,
-                                              (INT)x,
-                                              (INT)y,
-                                              dest_width,
-                                              dest_height);
+    Status stat = graphics.DrawImage(image, (INT)x, (INT)y, dest_width, dest_height);
 
     delete image;
 
-    if (stat != Gdiplus::Ok) {
+    if (stat != Ok) {
         php_error_docref(NULL, E_WARNING, "Failed to draw image (GDI+ status: %d)", stat);
         RETURN_FALSE;
     }
 
     RETURN_TRUE;
 }
-
 /* {{{ proto void printer_abort(resource handle)
    Abort printing*/
 ZEND_FUNCTION(printer_abort)
