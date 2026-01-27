@@ -28,14 +28,31 @@
 #include <Winspool.h>
 #include "zend_list.h" // Explicitly include
 #include "printer_arginfo.h" // Explicitly include
+#include <windows.h>
+#include <gdiplus.h>
+// Use Gdiplus:: prefix to avoid potential naming conflicts
+#pragma comment(lib, "gdiplus.lib")
 extern zend_module_entry printer_module_entry;
 #define printer_module_ptr &printer_module_entry
 
 #define PHP_PRINTER_VERSION "0.1.0-dev"
+ULONG_PTR gdiplusToken;
+Gdiplus::GdiplusStartupInput gdiplusStartupInput;
 
-PHP_MINIT_FUNCTION(printer);
+PHP_MINIT_FUNCTION(printer)
+{
+    // ... existing init code ...
+    Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
+    return SUCCESS;
+}
+
 PHP_MINFO_FUNCTION(printer);
-PHP_MSHUTDOWN_FUNCTION(printer);
+PHP_MSHUTDOWN_FUNCTION(printer)
+{
+    // ... existing shutdown code ...
+    Gdiplus::GdiplusShutdown(gdiplusToken);
+    return SUCCESS;
+}
 
 ZEND_FUNCTION(printer_open);
 ZEND_FUNCTION(printer_close);

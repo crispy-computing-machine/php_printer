@@ -1765,6 +1765,90 @@ ZEND_FUNCTION(printer_draw_bmp)
 }
 /* }}} */
 
+ZEND_FUNCTION(printer_draw_image)
+{
+    zval *printer_res;
+    char *filename;
+    size_t filename_len;
+    zend_long x, y;
+    zend_long width = 0, height = 0;
+    printer *resource;
+    char *path = NULL;
+
+    ZEND_PARSE_PARAMETERS_START(4, 6)
+        Z_PARAM_RESOURCE(printer_res)
+        Z_PARAM_STRING(filename, filename_len)
+        Z_PARAM_LONG(x)
+        Z_PARAM_LONG(y)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(width)
+        Z_PARAM_LONG(height)
+    ZEND_PARSE_PARAMETERS_END();
+
+    resource = (printer *)zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        RETURN_FALSE;
+    }
+
+    if (resource->dc == NULL) {
+        php_error_docref(NULL, E_WARNING, "No DeviceContext available to draw image");
+        RETURN_FALSE;
+    }
+
+    // Resolve virtual file path (same as original function)
+    virtual_filepath(filename, &path);
+
+    // Convert path to wide string (GDI+ Image constructor expects wchar_t*)
+    int wlen = MultiByteToWideChar(CP_ACP, 0, path, -1, NULL, 0);
+    if (wlen == 0) {
+        php_error_docref(NULL, E_WARNING, "Failed to convert filename to wide string: %d", GetLastError());
+        RETURN_FALSE;
+    }
+    wchar_t *wpath = (wchar_t *)emalloc(wlen * sizeof(wchar_t));
+    MultiByteToWideChar(CP_ACP, 0, path, -1, wpath, wlen);
+
+    // Load image with GDI+
+    Gdiplus::Image *image = new Gdiplus::Image(wpath);
+    efree(wpath);
+
+    if (image->GetLastStatus() != Gdiplus::Ok) {
+        php_error_docref(NULL, E_WARNING, "Failed to load image '%s' (GDI+ status: %d)", filename, image->GetLastStatus());
+        delete image;
+        RETURN_FALSE;
+    }
+
+    UINT img_width = image->GetWidth();
+    UINT img_height = image->GetHeight();
+
+    // Create Graphics object from printer DC
+    Gdiplus::Graphics graphics(resource->dc);
+    if (graphics.GetLastStatus() != Gdiplus::Ok) {
+        php_error_docref(NULL, E_WARNING, "Failed to create Graphics object from printer DC");
+        delete image;
+        RETURN_FALSE;
+    }
+
+    // Determine destination size (match original behavior: stretch only if both width and height > 0)
+    INT dest_width  = (width > 0 && height > 0) ? (INT)width  : (INT)img_width;
+    INT dest_height = (width > 0 && height > 0) ? (INT)height : (INT)img_height;
+
+    // Draw (this overload stretches the entire source image to the destination rectangle)
+    Gdiplus::Status stat = graphics.DrawImage(image,
+                                              (INT)x,
+                                              (INT)y,
+                                              dest_width,
+                                              dest_height);
+
+    delete image;
+
+    if (stat != Gdiplus::Ok) {
+        php_error_docref(NULL, E_WARNING, "Failed to draw image (GDI+ status: %d)", stat);
+        RETURN_FALSE;
+    }
+
+    RETURN_TRUE;
+}
 
 /* {{{ proto void printer_abort(resource handle)
    Abort printing*/
