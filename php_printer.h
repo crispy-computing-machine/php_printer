@@ -28,7 +28,7 @@
 #include <Winspool.h>
 #include "zend_list.h" // Explicitly include
 #include "printer_arginfo.h" // Explicitly include
-#include "../gd/libgd/gd.h"
+#include <gd.h>
 extern zend_module_entry printer_module_entry;
 #define printer_module_ptr &printer_module_entry
 
