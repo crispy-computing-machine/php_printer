@@ -30,9 +30,6 @@ install:
             move c:\build-cache\$dname0 c:\build-cache\$dname1
     }
 
-    echo "Copy extension source to PHP ext dir"
-    xcopy c:\projects\php_printer C:\projects\php-src\ext\php_printer\ /s /e /y /i /f
-
 cache:
   c:\build-cache -> .appveyor.yml
 
@@ -56,19 +53,26 @@ build_script:
     $php_src_dir = 'c:\projects\php-src'
 
     # Download PHP source if not present
-    if (-not (Test-Path $php_src_dir)) {
+    if (-not (Test-Path "$php_src_dir\buildconf.bat")) {
             echo "Downloading PHP source..."
-            $php_branch = $env:PHP_VER.substring(0,3) + '.x'  # e.g., 8.4.x
-            git clone --depth 1 --branch PHP-$env:PHP_VER https://github.com/php/php-src.git $php_src_dir
+            if (Test-Path $php_src_dir) {
+                Remove-Item -Recurse -Force $php_src_dir
+            }
+            $php_branch = 'PHP-' + $env:PHP_VER.substring(0,3)
+            echo "Cloning PHP branch: $php_branch"
+            git clone --depth 1 --branch $php_branch https://github.com/php/php-src.git $php_src_dir
             if ($LASTEXITCODE -ne 0) {
-                echo "Trying to clone branch $php_branch instead..."
-                git clone --depth 1 --branch $php_branch https://github.com/php/php-src.git $php_src_dir
+                echo "Failed to clone PHP source"
+                exit 1
             }
     }
 
-    # Copy extension source to PHP ext dir (again, in case it wasn't done in install)
+    # Copy extension source to PHP ext dir
     echo "Copying extension source to PHP ext dir..."
-    xcopy c:\projects\php_printer $php_src_dir\ext\php_printer\ /s /e /y /i /f
+    if (Test-Path "$php_src_dir\ext\php_printer") {
+        Remove-Item -Recurse -Force "$php_src_dir\ext\php_printer"
+    }
+    xcopy c:\projects\php_printer $php_src_dir\ext\php_printer\ /s /e /y /i /q
 
     # Download devel-pack (headers + libs reference)
     $bname = 'php-devel-pack-' + $env:PHP_VER + $ts_part + '-Win32-' + $env:VC.toUpper() + '-' + $env:ARCH + '.zip'
