@@ -30,26 +30,25 @@ install:
             move c:\build-cache\$dname0 c:\build-cache\$dname1
     }
 
-    # === NEW: Activate Visual Studio environment so cl.exe is available for phpsdk_deps ===
-    echo "Activating VS environment"
-    & "c:\build-cache\$dname1\phpsdk-$($env:VC)-$($env:ARCH).bat"
-
     echo "Copy GIT files to SRC build directory"
     xcopy c:\projects\php_printer C:\projects\php-src\ext\php_printer\ /s /e /y /f
 
-    # === Prepare dependencies ===
+    # === Prepare dependencies using phpsdk_deps in activated env ===
     echo "Preparing dependencies directory"
     $depsDir = "C:\projects\php-src\deps"
     if (-not (Test-Path $depsDir)) {
         mkdir $depsDir
     }
+    $runner = 'c:\build-cache\php-sdk-' + $env:BIN_SDK_VER + '\phpsdk' + '-' + $env:VC + '-' + $env:ARCH + '.bat'
     cd C:\projects\php-src
-    # Explicit branch + arch; environment is now set so cl.exe detection works
-    & "c:\build-cache\$dname1\bin\phpsdk_deps.bat" --update --force --branch 8.4 --arch x64 -d $depsDir
+    echo "" | Out-File -Encoding "ASCII" deps_task.bat
+    echo "call bin\phpsdk_deps.bat --update --branch 8.4 --arch x64 -d deps 2>&1" | Out-File -Encoding "ASCII" -Append deps_task.bat
+    & $runner -t deps_task.bat
     cd C:\projects\php_printer
 
 cache:
   c:\build-cache -> .appveyor.yml
+  c:\projects\php-src\deps -> .appveyor.yml
 
 environment:
   BIN_SDK_VER: 2.3.0
@@ -79,6 +78,9 @@ build_script:
     $dname1 = 'php-' + $env:PHP_VER + $ts_part + '-devel-' + $env:VC.toUpper() + '-' + $env:ARCH
     if (-not (Test-Path c:\build-cache\$dname1)) {
             7z x c:\build-cache\$bname -oc:\build-cache
+            # Same directory??? (comment kept as-is)
+            #echo Moving c:\build-cache\$dname0 to c:\build-cache\$dname1
+            #move c:\build-cache\$dname0 c:\build-cache\$dname1
     }
 
     echo "Main build process..."
