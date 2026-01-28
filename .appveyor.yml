@@ -66,30 +66,33 @@ build_script:
     }
 
     # Create a batch script with all build commands
-    $build_script_path = "c:\build-cache\build-commands.bat"
-    $script_content = "@echo off`r`n"
-    $script_content += "cd c:\projects\php-src`r`n"
-    $script_content += "echo Running phpsdk_deps...`r`n"
-    $script_content += "phpsdk_deps --update --branch $($env:PHP_VER.substring(0,3)) --deps $deps_dir --stability stable`r`n"
-    $script_content += "if errorlevel 1 exit /b 1`r`n"
-    $script_content += "`r`n"
-    $script_content += "echo Running buildconf...`r`n"
-    $script_content += "buildconf.bat --force`r`n"
-    $script_content += "if errorlevel 1 exit /b 1`r`n"
-    $script_content += "`r`n"
-    $script_content += "echo Running configure...`r`n"
-    $script_content += "configure.bat --enable-printer=shared --enable-debug --with-php-build=`"$deps_dir`" --disable-test-ini`r`n"
-    $script_content += "if errorlevel 1 exit /b 1`r`n"
-    $script_content += "`r`n"
-    $script_content += "echo Running nmake...`r`n"
-    $script_content += "nmake /NOLOGO`r`n"
-    $script_content += "if errorlevel 1 exit /b 1`r`n"
-    [System.IO.File]::WriteAllText($build_script_path, $script_content)
+    $build_script = @"
+  @echo off
+  cd c:\projects\php-src
+  echo Running phpsdk_deps...
+  phpsdk_deps --update --branch $($env:PHP_VER.substring(0,3)) --deps $deps_dir --stability stable
+  if errorlevel 1 exit /b 1
+  
+  echo Running buildconf...
+  buildconf.bat --force
+  if errorlevel 1 exit /b 1
+  
+  echo Running configure...
+  configure.bat --enable-printer=shared --enable-debug --with-php-build="$deps_dir" --disable-test-ini
+  if errorlevel 1 exit /b 1
+  
+  echo Running nmake...
+  nmake /NOLOGO
+  if errorlevel 1 exit /b 1
+  "@
 
-    # Execute the build script within the SDK environment
-    $starter = Join-Path $sdk_root "phpsdk-$($env:VC)-$($env:ARCH).bat"
-    & cmd /c "$starter -t $build_script_path"
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    $build_script_path = "c:\build-cache\build-commands.bat"
+  $build_script | Out-File -FilePath $build_script_path -Encoding ASCII
+  
+  # Execute the build script within the SDK environment
+  $starter = Join-Path $sdk_root "phpsdk-$($env:VC)-$($env:ARCH).bat"
+  & cmd /c "$starter -t $build_script_path"
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 after_build:
   ps: |
