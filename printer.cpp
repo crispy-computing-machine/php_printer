@@ -82,7 +82,6 @@ zend_function_entry printer_functions[] = {
 	PHP_FE(printer_draw_chord,			arginfo_printer_draw_chord)
 	PHP_FE(printer_draw_pie,			arginfo_printer_draw_pie)
 	PHP_FE(printer_draw_bmp,			arginfo_printer_draw_bmp)
-	PHP_FE(printer_draw,			arginfo_printer_draw)
 	PHP_FE(printer_abort,				arginfo_printer_abort)
 	{NULL, NULL, NULL}
 };
@@ -1775,12 +1774,6 @@ ZEND_FUNCTION(printer_draw_image)
     zend_long width = 0, height = 0;
     printer *resource;
     char *path = NULL;
-    HDC dummy = NULL;
-    HBITMAP hbmp = NULL;
-    BITMAP bmp_property;
-    int img_width = 0, img_height = 0;
-    gdImagePtr im = NULL;
-    FILE *f = NULL;
 
     ZEND_PARSE_PARAMETERS_START(4, 6)
         Z_PARAM_RESOURCE(printer_res)
@@ -1803,165 +1796,49 @@ ZEND_FUNCTION(printer_draw_image)
         RETURN_FALSE;
     }
 
-    // Resolve virtual file path (same as original)
     virtual_filepath(filename, &path);
 
-    // Create a memory-compatible DC first (needed for CreateDIBSection color matching)
-    dummy = CreateCompatibleDC(resource->dc);
-    if (dummy == NULL) {
-        php_error_docref(NULL, E_WARNING, "Failed to create compatible DC: %d", GetLastError());
+    int wlen = MultiByteToWideChar(CP_ACP, 0, path, -1, NULL, 0);
+    if (wlen == 0) {
+        php_error_docref(NULL, E_WARNING, "Failed to convert filename to wide string: %d", GetLastError());
+        RETURN_FALSE;
+    }
+    wchar_t *wpath = (wchar_t *)emalloc(wlen * sizeof(wchar_t));
+    MultiByteToWideChar(CP_ACP, 0, path, -1, wpath, wlen);
+
+    Image *image = new Image(wpath);
+    efree(wpath);
+
+    if (image->GetLastStatus() != Ok) {
+        php_error_docref(NULL, E_WARNING, "Failed to load image '%s' (GDI+ status: %d)", filename, image->GetLastStatus());
+        delete image;
         RETURN_FALSE;
     }
 
-    // Try to load with libgd based on file extension
-    char *dot = strrchr(filename, '.');
-    if (dot && (filename_len - (dot - filename) > 1)) {
-        size_t ext_len = filename_len - (dot - filename) - 1;
-        char *ext = estrndup(dot + 1, ext_len);
-        php_strtolower(ext, ext_len);
+    UINT img_width = image->GetWidth();
+    UINT img_height = image->GetHeight();
 
-        f = fopen(path, "rb");
-        if (f) {
-            if (strcmp(ext, "png") == 0) {
-                im = gdImageCreateFromPng(f);
-            } else if (strcmp(ext, "jpg") == 0 || strcmp(ext, "jpeg") == 0) {
-                im = gdImageCreateFromJpeg(f);
-            } else if (strcmp(ext, "gif") == 0) {
-                im = gdImageCreateFromGif(f);
-            } else if (strcmp(ext, "bmp") == 0) {
-                im = gdImageCreateFromBmp(f);
-            }
-            // Add more formats here if your libgd build supports them (e.g., webp, tga)
-            fclose(f);
-        }
-        efree(ext);
-    }
-
-    if (im) {
-        // Convert palette-based images to truecolor (most modern libgd images are already truecolor)
-        if (!im->trueColor) {
-            if (!gdImagePaletteToTrueColor(im)) {
-                gdImageDestroy(im);
-                DeleteDC(dummy);
-                php_error_docref(NULL, E_WARNING, "Failed to convert image to truecolor");
-                RETURN_FALSE;
-            }
-        }
-
-        img_width = gdImageSX(im);
-        img_height = gdImageSY(im);
-
-        // Create a 32-bit DIBSection (top-down for easier pixel copying)
-        BITMAPINFO bmi = {0};
-        bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-        bmi.bmiHeader.biWidth = img_width;
-        bmi.bmiHeader.biHeight = -img_height;  // Negative = top-down DIB
-        bmi.bmiHeader.biPlanes = 1;
-        bmi.bmiHeader.biBitCount = 32;
-        bmi.bmiHeader.biCompression = BI_RGB;
-
-        void *bits = NULL;
-        hbmp = CreateDIBSection(dummy, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
-        if (!hbmp) {
-            gdImageDestroy(im);
-            DeleteDC(dummy);
-            php_error_docref(NULL, E_WARNING, "Failed to create DIBSection: %d", GetLastError());
-            RETURN_FALSE;
-        }
-
-        // Copy pixels from gdImage (ARGB) to DIB (BGRA), blending alpha with white background
-        int stride = ((img_width * 4) + 3) & ~3;  // Row stride (4-byte aligned)
-        unsigned char *row = (unsigned char *)bits;
-        for (int y = 0; y < img_height; y++) {
-            unsigned char *dest = row + y * stride;
-            int *src = im->tpixels[y];
-            for (int x = 0; x < img_width; x++) {
-                int c = src[x];
-                int a = (c >> 24) & 0xFF;
-                int r = (c >> 16) & 0xFF;
-                int g = (c >>  8) & 0xFF;
-                int b =  c        & 0xFF;
-
-                if (a < 0xFF) {
-                    int inv_a = 255 - a;
-                    r = (r * a + 255 * inv_a) / 255;
-                    g = (g * a + 255 * inv_a) / 255;
-                    b = (b * a + 255 * inv_a) / 255;
-                }
-
-                dest[x*4 + 0] = (unsigned char)b;
-                dest[x*4 + 1] = (unsigned char)g;
-                dest[x*4 + 2] = (unsigned char)r;
-                dest[x*4 + 3] = 0xFF;
-            }
-        }
-
-        gdImageDestroy(im);
-    } else {
-        // Fallback to original BMP-only loading if libgd failed or format unsupported
-        hbmp = (HBITMAP)LoadImageA(NULL, path, IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION | LR_LOADFROMFILE);
-        if (!hbmp) {
-            DeleteDC(dummy);
-            php_error_docref(NULL, E_WARNING, "Failed to load image %s (unsupported format or file error): %d", filename, GetLastError());
-            RETURN_FALSE;
-        }
-
-        if (GetObject(hbmp, sizeof(BITMAP), &bmp_property) == 0) {
-            DeleteObject(hbmp);
-            DeleteDC(dummy);
-            php_error_docref(NULL, E_WARNING, "Failed to get bitmap properties: %d", GetLastError());
-            RETURN_FALSE;
-        }
-
-        img_width = bmp_property.bmWidth;
-        img_height = bmp_property.bmHeight;
-    }
-
-    // Select bitmap into compatible DC
-    if (SelectObject(dummy, hbmp) == NULL) {
-        php_error_docref(NULL, E_WARNING, "Failed to select bitmap into compatible DC: %d", GetLastError());
-        DeleteObject(hbmp);
-        DeleteDC(dummy);
+    Graphics graphics(resource->dc);
+    if (graphics.GetLastStatus() != Ok) {
+        php_error_docref(NULL, E_WARNING, "Failed to create Graphics object from printer DC");
+        delete image;
         RETURN_FALSE;
     }
 
-    // Improved capability checks (original incorrectly required StretchBlt even for BitBlt)
-    DWORD raster_caps = GetDeviceCaps(resource->dc, RASTERCAPS);
-    if (!(raster_caps & RC_BITBLT)) {
-        php_error_docref(NULL, E_WARNING, "Printer does not support bitmaps (missing RC_BITBLT)");
-        DeleteObject(hbmp);
-        DeleteDC(dummy);
-        RETURN_FALSE;
-    }
-    if ((width > 0 && height > 0) && !(raster_caps & RC_STRETCHBLT)) {
-        php_error_docref(NULL, E_WARNING, "Printer does not support stretching bitmaps (missing RC_STRETCHBLT)");
-        DeleteObject(hbmp);
-        DeleteDC(dummy);
-        RETURN_FALSE;
-    }
+    INT dest_width  = (width > 0 && height > 0) ? (INT)width  : (INT)img_width;
+    INT dest_height = (width > 0 && height > 0) ? (INT)height : (INT)img_height;
 
-    // Draw the image
-    BOOL result;
-    if (width > 0 && height > 0) {
-        result = StretchBlt(resource->dc, (int)x, (int)y, (int)width, (int)height,
-                            dummy, 0, 0, img_width, img_height, SRCCOPY);
-    } else {
-        result = BitBlt(resource->dc, (int)x, (int)y, img_width, img_height,
-                        dummy, 0, 0, SRCCOPY);
-    }
+    Status stat = graphics.DrawImage(image, (INT)x, (INT)y, dest_width, dest_height);
 
-    // Cleanup
-    DeleteDC(dummy);
-    DeleteObject(hbmp);
+    delete image;
 
-    if (!result) {
-        php_error_docref(NULL, E_WARNING, "Failed to draw image: %d", GetLastError());
+    if (stat != Ok) {
+        php_error_docref(NULL, E_WARNING, "Failed to draw image (GDI+ status: %d)", stat);
         RETURN_FALSE;
     }
 
     RETURN_TRUE;
 }
-
 /* {{{ proto void printer_abort(resource handle)
    Abort printing*/
 ZEND_FUNCTION(printer_abort)

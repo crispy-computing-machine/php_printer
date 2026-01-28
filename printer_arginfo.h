@@ -214,16 +214,6 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_printer_draw_bmp, 0, 4, _IS_BOOL
 ZEND_END_ARG_INFO()
 
 /* @return bool */
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_printer_draw, 0, 4, _IS_BOOL, 0)
-    ZEND_ARG_INFO(0, connection) // Mixed (was IS_RESOURCE)
-    ZEND_ARG_TYPE_INFO(0, filename, IS_STRING, 0)
-    ZEND_ARG_TYPE_INFO(0, x, IS_LONG, 0)
-    ZEND_ARG_TYPE_INFO(0, y, IS_LONG, 0)
-    ZEND_ARG_TYPE_INFO(0, width, IS_LONG, 1)
-    ZEND_ARG_TYPE_INFO(0, height, IS_LONG, 1)
-ZEND_END_ARG_INFO()
-
-/* @return bool */
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_printer_abort, 0, 1, _IS_BOOL, 0)
     ZEND_ARG_INFO(0, connection) // Mixed (was IS_RESOURCE)
 ZEND_END_ARG_INFO()
