@@ -51,11 +51,12 @@ build_script:
     $ts_part = ''
     if ('0' -eq $env:TS) { $ts_part = '-nts' }
 
-    $sdk_root   = 'c:\build-cache\php-sdk-' + $env:BIN_SDK_VER
-    $deps_dir   = 'c:\build-cache\deps-' + $env:PHP_VER.substring(0,3) + '-' + $env:VC + '-' + $env:ARCH + $ts_part
+    $sdk_root = 'c:\build-cache\' + 'php-sdk-' + $env:BIN_SDK_VER
+    $deps_dir  = 'c:\build-cache\deps-' + $env:PHP_VER.substring(0,3) + '-' + $env:VC + '-' + $env:ARCH + $ts_part
 
-    # Download devel-pack (headers + libs reference)
+    # Download devel-pack (still useful as reference + headers)
     $bname = 'php-devel-pack-' + $env:PHP_VER + $ts_part + '-Win32-' + $env:VC.toUpper() + '-' + $env:ARCH + '.zip'
+    echo "Download PHP devel pack: https://downloads.brittainmedia.co.uk/$bname"
     if (-not (Test-Path c:\build-cache\$bname)) {
             Invoke-WebRequest "https://downloads.brittainmedia.co.uk/$bname" -OutFile "c:\build-cache\$bname"
     }
@@ -65,28 +66,11 @@ build_script:
             7z x c:\build-cache\$bname -o"c:\build-cache"
     }
 
-    # Start the SDK environment (no -t, no huge quoted command)
-    $starter = Join-Path $sdk_root "phpsdk-$($env:VC)-$($env:ARCH).bat"
-    & $starter
+    # Start SDK environment using the official starter script
+    $starter = $sdk_root + '\phpsdk-' + $env:VC + '-' + $env:ARCH + '.bat'
+    # We run the rest of the build inside the SDK environment
+    & cmd /c "$starter -t `"cd /d c:\projects\php-src && phpsdk_deps --update --branch $($env:PHP_VER.substring(0,3)) --deps $deps_dir --stability stable && buildconf.bat --force && configure.bat --enable-printer=shared  --enable-gd --enable-debug --with-php-build=$deps_dir --disable-test-ini && nmake /NOLOGO`""
 
-    # Now the environment is set → run build steps directly
-    cd c:\projects\php-src
-
-    # Fetch dependencies (stable branch matching major.minor)
-    phpsdk_deps --update --branch $env:PHP_VER.substring(0,3) --deps $deps_dir --stability stable
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-    # Regenerate configure files
-    buildconf.bat --force
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-    # Configure the extension (shared + debug)
-    $configure_args = "--enable-printer=shared --enable-debug --with-php-build=`"$deps_dir`" --disable-test-ini"
-    configure.bat $configure_args
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-    # Build
-    nmake /NOLOGO
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 after_build:
