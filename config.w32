@@ -4,9 +4,8 @@
 ARG_ENABLE("printer", "Printer Support", "no");
 
 if (PHP_PRINTER == "yes") {
-    EXTENSION("printer", "printer.c");                  // Must be first
-    ADD_EXTENSION_DEP("printer", "gd");                  // Now safe — "printer" is registered
-    CHECK_LIB("winspool.lib", "printer");                // Required for printer functions
-    // Remove gdi32.lib — it's linked automatically on Windows
+    EXTENSION("printer", "printer.c");  // Must come BEFORE ADD_EXTENSION_DEP
+    CHECK_LIB("winspool.lib", "printer");
+    CHECK_LIB("gdi32.lib", "printer");   // Optional – usually linked by default, but harmless
     AC_DEFINE("HAVE_PRINTER", 1, "Have Printer support");
 }
