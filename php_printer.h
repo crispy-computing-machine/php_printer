@@ -31,20 +31,18 @@
 #include <windows.h>
 #include <gdiplus.h>
 // Use Gdiplus:: prefix to avoid potential naming conflicts
-using namespace Gdiplus;  // Add this to avoid Gdiplus:: prefixes
 #pragma comment(lib, "gdiplus.lib")
-
 extern zend_module_entry printer_module_entry;
 #define printer_module_ptr &printer_module_entry
 
 #define PHP_PRINTER_VERSION "0.1.0-dev"
 ULONG_PTR gdiplusToken;
-GdiplusStartupInput gdiplusStartupInput;
+Gdiplus::GdiplusStartupInput gdiplusStartupInput;
 
 PHP_MINIT_FUNCTION(printer)
 {
     // ... existing init code ...
-    GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
+    Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
     return SUCCESS;
 }
 
@@ -52,7 +50,7 @@ PHP_MINFO_FUNCTION(printer);
 PHP_MSHUTDOWN_FUNCTION(printer)
 {
     // ... existing shutdown code ...
-    GdiplusShutdown(gdiplusToken);
+    Gdiplus::GdiplusShutdown(gdiplusToken);
     return SUCCESS;
 }
 
