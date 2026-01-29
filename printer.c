@@ -1767,17 +1767,16 @@ ZEND_FUNCTION(printer_draw_bmp)
 
 PHP_FUNCTION(printer_draw_image)
 {
-    zval *printer_res;
-    zval *image_res;
+zval *printer_res;
+    zval *image_arg;   // generic zval
     zend_long x, y;
     zend_long width = 0, height = 0;
     printer *resource;
     gdImagePtr im = NULL;
-    HDC hdc = NULL;
 
     ZEND_PARSE_PARAMETERS_START(4, 6)
         Z_PARAM_RESOURCE(printer_res)
-        Z_PARAM_RESOURCE(image_res)
+        Z_PARAM_ZVAL(image_arg)                         // ← generic
         Z_PARAM_LONG(x)
         Z_PARAM_LONG(y)
         Z_PARAM_OPTIONAL
@@ -1785,116 +1784,84 @@ PHP_FUNCTION(printer_draw_image)
         Z_PARAM_LONG(height)
     ZEND_PARSE_PARAMETERS_END();
 
-    // Fetch printer resource
     resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
-    if (!resource) {
-        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+    if (!resource || resource->dc == NULL) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer or no DC");
         RETURN_FALSE;
     }
 
-    if (resource->dc == NULL) {
-        php_error_docref(NULL, E_WARNING, "No DeviceContext available to draw image");
+    zend_resource *res = NULL;
+
+    if (Z_TYPE_P(image_arg) == IS_OBJECT) {
+        // PHP 8+: GdImage object
+        zend_class_entry *gd_ce = zend_hash_str_find_ptr(EG(class_table), "gdimage", 7);
+        if (!gd_ce || !instanceof_function(Z_OBJCE_P(image_arg), gd_ce)) {
+            php_error_docref(NULL, E_WARNING, "Argument #2 must be GdImage object or GD resource");
+            RETURN_FALSE;
+        }
+
+        // Critical: Get the internal resource handle from the object
+        // GdImage object stores the zend_resource* internally (offset 0 in most builds)
+        // This is fragile but common in extensions until official API exists
+        res = *(zend_resource**)Z_OBJ_P(image_arg)->handle;
+        if (!res || res->type != zend_hash_str_find_ptr(EG(resource_list), "gd", 2)->type) {
+            php_error_docref(NULL, E_WARNING, "Invalid GdImage internal resource");
+            RETURN_FALSE;
+        }
+    } else if (Z_TYPE_P(image_arg) == IS_RESOURCE) {
+        // PHP 7 or legacy
+        res = Z_RES_P(image_arg);
+    } else {
+        php_error_docref(NULL, E_WARNING, "Argument #2 must be GdImage or resource");
         RETURN_FALSE;
     }
 
-    hdc = resource->dc;
-
-    // Fetch GD image pointer (use -1 to skip type name check)
-    im = (gdImagePtr) zend_fetch_resource(Z_RES_P(image_res), "GD Image", -1);
+    // Now fetch the pointer using the resource
+    im = (gdImagePtr) zend_fetch_resource(res, "GD Image", -1);  // -1 = skip name check
     if (!im) {
-        php_error_docref(NULL, E_WARNING, "Invalid GD image resource");
+        php_error_docref(NULL, E_WARNING, "Failed to fetch GD image pointer");
         RETURN_FALSE;
     }
 
-    // Validate image dimensions
-    if (im->sx <= 0 || im->sy <= 0) {
-        php_error_docref(NULL, E_WARNING, "GD image has invalid dimensions");
-        RETURN_FALSE;
-    }
-
+    // Proceed with drawing...
     int target_width  = (width > 0)  ? (int)width  : im->sx;
     int target_height = (height > 0) ? (int)height : im->sy;
 
-    // Optional: Check printer supports bitmaps/stretching
-    if (!(GetDeviceCaps(hdc, RASTERCAPS) & RC_STRETCHBLT)) {
-        php_error_docref(NULL, E_WARNING, "Printer does not support stretching bitmaps");
+    if (target_w <= 0 || target_h <= 0) {
+        php_error_docref(NULL, E_WARNING, "Invalid target dimensions");
         RETURN_FALSE;
     }
 
-    // Create a temporary compatible DC
-    HDC mem_dc = CreateCompatibleDC(hdc);
-    if (!mem_dc) {
-        php_error_docref(NULL, E_WARNING, "Failed to create compatible DC: %d", GetLastError());
-        RETURN_FALSE;
-    }
-
-    // Create a DIB section to hold the GD image pixels (faster than per-pixel SetPixel)
-    BITMAPINFO bmi = {0};
-    bmi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth       = im->sx;
-    bmi.bmiHeader.biHeight      = -im->sy;  // top-down
-    bmi.bmiHeader.biPlanes      = 1;
-    bmi.bmiHeader.biBitCount    = 32;
-    bmi.bmiHeader.biCompression = BI_RGB;
-
-    void *pixels = NULL;
-    HBITMAP hbitmap = CreateDIBSection(mem_dc, &bmi, DIB_RGB_COLORS, &pixels, NULL, 0);
-    if (!hbitmap || !pixels) {
-        php_error_docref(NULL, E_WARNING, "Failed to create DIB section: %d", GetLastError());
-        DeleteDC(mem_dc);
-        RETURN_FALSE;
-    }
-
-    SelectObject(mem_dc, hbitmap);
-
-    // Copy GD pixels into the DIB (truecolor or palette)
+    // Drawing (truecolor branch)
     if (im->trueColor) {
-        for (int y = 0; y < im->sy; y++) {
-            for (int x = 0; x < im->sx; x++) {
-                int color = im->tpixels[y][x];
+        for (int py = 0; py < im->sy; py++) {
+            for (int px = 0; px < im->sx; px++) {
+                int color = im->tpixels[py][px];
                 int r = gdTrueColorGetRed(color);
                 int g = gdTrueColorGetGreen(color);
                 int b = gdTrueColorGetBlue(color);
-                // BGRA format for Windows DIB
-                ((unsigned char*)pixels)[(y * im->sx + x) * 4 + 0] = b;
-                ((unsigned char*)pixels)[(y * im->sx + x) * 4 + 1] = g;
-                ((unsigned char*)pixels)[(y * im->sx + x) * 4 + 2] = r;
-                ((unsigned char*)pixels)[(y * im->sx + x) * 4 + 3] = 0;  // alpha ignored
+
+                int dest_x = (int)x + (int)((double)px * target_w / im->sx);
+                int dest_y = (int)y + (int)((double)py * target_h / im->sy);
+
+                SetPixel(resource->dc, dest_x, dest_y, RGB(r, g, b));
             }
         }
     } else {
-        // Palette mode
-        for (int y = 0; y < im->sy; y++) {
-            for (int x = 0; x < im->sx; x++) {
-                int idx = im->pixels[y][x];
+        // Palette branch (similar, using im->pixels, im->red/green/blue arrays)
+        for (int py = 0; py < im->sy; py++) {
+            for (int px = 0; px < im->sx; px++) {
+                int idx = im->pixels[py][px];
                 int r = im->red[idx];
                 int g = im->green[idx];
                 int b = im->blue[idx];
-                ((unsigned char*)pixels)[(y * im->sx + x) * 4 + 0] = b;
-                ((unsigned char*)pixels)[(y * im->sx + x) * 4 + 1] = g;
-                ((unsigned char*)pixels)[(y * im->sx + x) * 4 + 2] = r;
-                ((unsigned char*)pixels)[(y * im->sx + x) * 4 + 3] = 0;
+
+                int dest_x = (int)x + (int)((double)px * target_w / im->sx);
+                int dest_y = (int)y + (int)((double)py * target_h / im->sy);
+
+                SetPixel(resource->dc, dest_x, dest_y, RGB(r, g, b));
             }
         }
-    }
-
-    // Draw to printer DC (with optional stretching)
-    BOOL success;
-    if (target_width == im->sx && target_height == im->sy) {
-        success = BitBlt(hdc, (int)x, (int)y, im->sx, im->sy,
-                         mem_dc, 0, 0, SRCCOPY);
-    } else {
-        success = StretchBlt(hdc, (int)x, (int)y, target_width, target_height,
-                             mem_dc, 0, 0, im->sx, im->sy, SRCCOPY);
-    }
-
-    // Cleanup
-    DeleteObject(hbitmap);
-    DeleteDC(mem_dc);
-
-    if (!success) {
-        php_error_docref(NULL, E_WARNING, "Failed to draw GD image: %d", GetLastError());
-        RETURN_FALSE;
     }
 
     RETURN_TRUE;
