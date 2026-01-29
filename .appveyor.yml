@@ -42,7 +42,7 @@ install:
     $runner = 'c:\build-cache\php-sdk-' + $env:BIN_SDK_VER + '\phpsdk' + '-' + $env:VC + '-' + $env:ARCH + '.bat'
     cd C:\projects\php-src
     echo "" | Out-File -Encoding "ASCII" deps_task.bat
-    echo "call phpsdk_deps.bat --update --force --branch 8.4 --arch x64 -d deps 2>&1" | Out-File -Encoding "ASCII" -Append deps_task.bat
+    echo "call bin\phpsdk_deps.bat --update --branch 8.4 --arch x64 -d deps 2>&1" | Out-File -Encoding "ASCII" -Append deps_task.bat
     & $runner -t deps_task.bat
     cd C:\projects\php_printer
 
