@@ -82,6 +82,7 @@ zend_function_entry printer_functions[] = {
 	PHP_FE(printer_draw_chord,			arginfo_printer_draw_chord)
 	PHP_FE(printer_draw_pie,			arginfo_printer_draw_pie)
 	PHP_FE(printer_draw_bmp,			arginfo_printer_draw_bmp)
+	PHP_FE(printer_draw_image,			arginfo_printer_draw_image)
 	PHP_FE(printer_abort,				arginfo_printer_abort)
 	{NULL, NULL, NULL}
 };
@@ -1765,6 +1766,93 @@ ZEND_FUNCTION(printer_draw_bmp)
 }
 /* }}} */
 
+ZEND_FUNCTION(printer_draw_image)
+{
+    zval *printer_res;
+    zval *image_zval;
+    zend_long x, y;
+    zend_long width = 0, height = 0;
+    printer *resource;
+    gdImagePtr im = NULL;
+
+    // Parse parameters: printer resource, GD image resource, x, y, [width, height]
+    ZEND_PARSE_PARAMETERS_START(4, 6)
+        Z_PARAM_RESOURCE(printer_res)
+        Z_PARAM_RESOURCE(image_zval)
+        Z_PARAM_LONG(x)
+        Z_PARAM_LONG(y)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(width)
+        Z_PARAM_LONG(height)
+    ZEND_PARSE_PARAMETERS_END();
+
+    // Fetch printer resource
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    if (!resource) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+        RETURN_FALSE;
+    }
+
+    if (resource->dc == NULL) {
+        php_error_docref(NULL, E_WARNING, "No DeviceContext available to draw image");
+        RETURN_FALSE;
+    }
+
+    // Check if GD support was detected
+    if (le_gd == -1) {
+        php_error_docref(NULL, E_WARNING, "GD extension not loaded - cannot draw GD image");
+        RETURN_FALSE;
+    }
+
+    // Fetch the gdImagePtr from the resource
+    im = (gdImagePtr) zend_fetch_resource(Z_RES_P(image_zval), "GD Image", le_gd);
+    if (!im) {
+        php_error_docref(NULL, E_WARNING, "Invalid GD image resource");
+        RETURN_FALSE;
+    }
+
+    // Optional: Check if printer supports per-pixel drawing (most do)
+    // You could add a fallback to StretchBlt if you create a DIB section, but that's more complex
+
+    int target_width  = (width > 0)  ? (int)width  : im->sx;
+    int target_height = (height > 0) ? (int)height : im->sy;
+
+    // Simple per-pixel drawing (truecolor assumed)
+    if (im->trueColor) {
+        for (int py = 0; py < im->sy; py++) {
+            for (int px = 0; px < im->sx; px++) {
+                int color = im->tpixels[py][px];
+
+                int r = gdTrueColorGetRed(color);
+                int g = gdTrueColorGetGreen(color);
+                int b = gdTrueColorGetBlue(color);
+                // int a = gdTrueColorGetAlpha(color);  // ignored for now (opaque)
+
+                int screen_x = (int)x + (px * target_width / im->sx);
+                int screen_y = (int)y + (py * target_height / im->sy);
+
+                SetPixel(resource->dc, screen_x, screen_y, RGB(r, g, b));
+            }
+        }
+    } else {
+        // Palette-based image (less common nowadays)
+        for (int py = 0; py < im->sy; py++) {
+            for (int px = 0; px < im->sx; px++) {
+                int idx = im->pixels[py][px];
+                int r = im->red[idx];
+                int g = im->green[idx];
+                int b = im->blue[idx];
+
+                int screen_x = (int)x + (px * target_width / im->sx);
+                int screen_y = (int)y + (py * target_height / im->sy);
+
+                SetPixel(resource->dc, screen_x, screen_y, RGB(r, g, b));
+            }
+        }
+    }
+
+    RETURN_TRUE;
+}
 
 /* {{{ proto void printer_abort(resource handle)
    Abort printing*/
