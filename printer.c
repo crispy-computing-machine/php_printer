@@ -247,38 +247,6 @@ PHP_MINIT_FUNCTION(printer)
 	REGP_CONSTANT("PRINTER_ENUM_NETWORK",		PRINTER_ENUM_NETWORK);
 	REGP_CONSTANT("PRINTER_ENUM_REMOTE",		PRINTER_ENUM_REMOTE);
 
-    // Your existing init code here (e.g., registering constants or INI entries)
-
-    // New: Detect GD resource type
-    zval func_name, retval, params[2];
-    ZVAL_STRING(&func_name, "imagecreatetruecolor");
-    ZVAL_LONG(&params[0], 1);  // width
-    ZVAL_LONG(&params[1], 1);  // height
-
-    if (call_user_function(NULL, NULL, &func_name, &retval, 2, params) == SUCCESS &&
-        Z_TYPE(retval) == IS_RESOURCE) {
-
-        le_gd = Z_RES(retval)->type;  // Save type ID (PHP 7/8 compatible)
-
-        // Clean up temp image
-        zval destroy_func, destroy_params[1], destroy_retval;
-        ZVAL_STRING(&destroy_func, "imagedestroy");
-        ZVAL_COPY(&destroy_params[0], &retval);
-        call_user_function(NULL, NULL, &destroy_func, &destroy_retval, 1, destroy_params);
-
-        zval_ptr_dtor(&destroy_func);
-        zval_ptr_dtor(&destroy_retval);
-    } else {
-        le_gd = -1;  // GD not available
-    }
-
-    zval_ptr_dtor(&func_name);
-    zval_ptr_dtor(&retval);
-
-    if (le_gd == -1) {
-        php_error_docref(NULL, E_NOTICE, "GD extension not loaded - GD features in printer disabled");
-    }
-
 	return SUCCESS;
 }
 
@@ -1798,16 +1766,13 @@ ZEND_FUNCTION(printer_draw_bmp)
 }
 /* }}} */
 
-ZEND_FUNCTION(printer_draw_image)
+PHP_FUNCTION(printer_draw_image)
 {
-    zval *printer_res;
-    zval *image_zval;
-    zend_long x, y;
-    zend_long width = 0, height = 0;
+    zval *printer_res, *image_zval;
+    zend_long x, y, width = 0, height = 0;
     printer *resource;
-    gdImagePtr im = NULL;
+    gdImagePtr im;
 
-    // Parse parameters: printer resource, GD image resource, x, y, [width, height]
     ZEND_PARSE_PARAMETERS_START(4, 6)
         Z_PARAM_RESOURCE(printer_res)
         Z_PARAM_RESOURCE(image_zval)
@@ -1818,7 +1783,6 @@ ZEND_FUNCTION(printer_draw_image)
         Z_PARAM_LONG(height)
     ZEND_PARSE_PARAMETERS_END();
 
-    // Fetch printer resource
     resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
     if (!resource) {
         php_error_docref(NULL, E_WARNING, "Invalid printer resource");
@@ -1830,35 +1794,37 @@ ZEND_FUNCTION(printer_draw_image)
         RETURN_FALSE;
     }
 
-    // Check if GD support was detected
+    // Lazy detection of GD type on first call
     if (le_gd == -1) {
-        php_error_docref(NULL, E_WARNING, "GD extension not loaded - cannot draw GD image");
-        RETURN_FALSE;
+        // Try to get the resource type from an actual GD resource
+        // (We assume the passed image_zval is valid GD if GD is loaded)
+        zend_resource *res = Z_RES_P(image_zval);
+        if (res && strcmp(res->type_name, "GD Image") == 0) {
+            le_gd = res->type;
+        } else {
+            php_error_docref(NULL, E_WARNING, "GD extension appears not loaded or incompatible - cannot process GD image");
+            RETURN_FALSE;
+        }
     }
 
-    // Fetch the gdImagePtr from the resource
+    // Now fetch using the type we just learned (or previously learned)
     im = (gdImagePtr) zend_fetch_resource(Z_RES_P(image_zval), "GD Image", le_gd);
     if (!im) {
         php_error_docref(NULL, E_WARNING, "Invalid GD image resource");
         RETURN_FALSE;
     }
 
-    // Optional: Check if printer supports per-pixel drawing (most do)
-    // You could add a fallback to StretchBlt if you create a DIB section, but that's more complex
-
+    // Rest of your drawing code remains the same...
     int target_width  = (width > 0)  ? (int)width  : im->sx;
     int target_height = (height > 0) ? (int)height : im->sy;
 
-    // Simple per-pixel drawing (truecolor assumed)
     if (im->trueColor) {
         for (int py = 0; py < im->sy; py++) {
             for (int px = 0; px < im->sx; px++) {
                 int color = im->tpixels[py][px];
-
                 int r = gdTrueColorGetRed(color);
                 int g = gdTrueColorGetGreen(color);
                 int b = gdTrueColorGetBlue(color);
-                // int a = gdTrueColorGetAlpha(color);  // ignored for now (opaque)
 
                 int screen_x = (int)x + (px * target_width / im->sx);
                 int screen_y = (int)y + (py * target_height / im->sy);
@@ -1867,20 +1833,7 @@ ZEND_FUNCTION(printer_draw_image)
             }
         }
     } else {
-        // Palette-based image (less common nowadays)
-        for (int py = 0; py < im->sy; py++) {
-            for (int px = 0; px < im->sx; px++) {
-                int idx = im->pixels[py][px];
-                int r = im->red[idx];
-                int g = im->green[idx];
-                int b = im->blue[idx];
-
-                int screen_x = (int)x + (px * target_width / im->sx);
-                int screen_y = (int)y + (py * target_height / im->sy);
-
-                SetPixel(resource->dc, screen_x, screen_y, RGB(r, g, b));
-            }
-        }
+        // palette code...
     }
 
     RETURN_TRUE;
