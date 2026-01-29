@@ -1772,8 +1772,8 @@ PHP_FUNCTION(printer_draw_image)
     zend_long x, y;
     zend_long width = 0, height = 0;
     printer *resource;
-    gdImagePtr im = NULL;
     static int gd_resource_type = -1;  // Cache the type ID
+    gdImagePtr im = NULL;
 
     ZEND_PARSE_PARAMETERS_START(4, 6)
         Z_PARAM_RESOURCE(printer_res)
