@@ -1768,16 +1768,16 @@ ZEND_FUNCTION(printer_draw_bmp)
 
 PHP_FUNCTION(printer_draw_image)
 {
-    zval *IM;
-    zval *printer_res;
-    gdImagePtr image_zval;
-    zend_long x, y, width = 0, height = 0;
+    zval *printer_zval;
+    zval *image_zval;
+    zend_long x, y;
+    zend_long width = 0, height = 0;
     printer *resource;
     gdImagePtr im;
 
     ZEND_PARSE_PARAMETERS_START(4, 6)
-        Z_PARAM_RESOURCE(printer_res)
-        Z_PARAM_OBJECT_OF_CLASS(IM, image_zval)
+        Z_PARAM_ZVAL(printer_zval)           // or Z_PARAM_RESOURCE if still resource
+        Z_PARAM_OBJECT_OF_CLASS(image_zval, gd_image_ce)
         Z_PARAM_LONG(x)
         Z_PARAM_LONG(y)
         Z_PARAM_OPTIONAL
@@ -1785,7 +1785,8 @@ PHP_FUNCTION(printer_draw_image)
         Z_PARAM_LONG(height)
     ZEND_PARSE_PARAMETERS_END();
 
-    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
+    // Get printer resource (adjust if you modernized printer to object)
+    resource = zend_fetch_resource(Z_RES_P(printer_zval), "Printer Handle", le_printer);
     if (!resource) {
         php_error_docref(NULL, E_WARNING, "Invalid printer resource");
         RETURN_FALSE;
@@ -1796,41 +1797,23 @@ PHP_FUNCTION(printer_draw_image)
         RETURN_FALSE;
     }
 
-    // Lazy GD type detection
-    if (le_gd == -1) {
-        zval func_name, retval, params[1];
-        ZVAL_STRING(&func_name, "get_resource_type");
-        ZVAL_COPY(&params[0], image_zval);
-
-        zend_result call_result = call_user_function(NULL, NULL, &func_name, &retval, 1, params);
-
-        if (call_result == SUCCESS && Z_TYPE(retval) == IS_STRING &&
-            Z_STRLEN(retval) == 8 && memcmp(Z_STRVAL(retval), "GD Image", 8) == 0) {
-
-            zend_resource *res = Z_RES_P(image_zval);
-            le_gd = res->type;  // Numeric type ID
-        } else {
-            php_error_docref(NULL, E_WARNING, "The provided resource is not a valid GD image (GD may not be loaded)");
-            zval_ptr_dtor(&func_name);
-            zval_ptr_dtor(&retval);
-            RETURN_FALSE;
-        }
-
-        zval_ptr_dtor(&func_name);
-        zval_ptr_dtor(&retval);
-    }
-
-    // Proceed with fetch
-    im = (gdImagePtr) zend_fetch_resource(Z_RES_P(image_zval), "GD Image", le_gd);
+    // Get gdImagePtr from the GdImage object
+    im = php_gd_libgdimageptr_from_zval_p(image_zval);
     if (!im) {
-        php_error_docref(NULL, E_WARNING, "Failed to fetch GD image resource");
+        php_error_docref(NULL, E_WARNING, "Failed to get internal GD image pointer");
         RETURN_FALSE;
     }
 
-    // Rest of your drawing code remains the same...
+    // Optional size validation
+    if (im->sx <= 0 || im->sy <= 0) {
+        php_error_docref(NULL, E_WARNING, "Invalid GD image dimensions");
+        RETURN_FALSE;
+    }
+
     int target_width  = (width > 0)  ? (int)width  : im->sx;
     int target_height = (height > 0) ? (int)height : im->sy;
 
+    // Drawing loop (truecolor or palette) - same as before
     if (im->trueColor) {
         for (int py = 0; py < im->sy; py++) {
             for (int px = 0; px < im->sx; px++) {
@@ -1846,7 +1829,19 @@ PHP_FUNCTION(printer_draw_image)
             }
         }
     } else {
-        // palette code...
+        for (int py = 0; py < im->sy; py++) {
+            for (int px = 0; px < im->sx; px++) {
+                int idx = im->pixels[py][px];
+                int r = im->red[idx];
+                int g = im->green[idx];
+                int b = im->blue[idx];
+
+                int screen_x = (int)x + (px * target_width / im->sx);
+                int screen_y = (int)y + (py * target_height / im->sy);
+
+                SetPixel(resource->dc, screen_x, screen_y, RGB(r, g, b));
+            }
+        }
     }
 
     RETURN_TRUE;
