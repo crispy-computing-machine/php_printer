@@ -1768,14 +1768,15 @@ ZEND_FUNCTION(printer_draw_bmp)
 
 PHP_FUNCTION(printer_draw_image)
 {
-    zval *printer_res, *image_zval;
+    zval *printer_res;
+    gdImagePtr image_zval;
     zend_long x, y, width = 0, height = 0;
     printer *resource;
     gdImagePtr im;
 
     ZEND_PARSE_PARAMETERS_START(4, 6)
         Z_PARAM_RESOURCE(printer_res)
-        Z_PARAM_RESOURCE(image_zval)
+        Z_PARAM_OBJECT_OF_CLASS(IM, image_zval)
         Z_PARAM_LONG(x)
         Z_PARAM_LONG(y)
         Z_PARAM_OPTIONAL
