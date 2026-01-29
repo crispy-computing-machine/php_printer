@@ -30,8 +30,6 @@
 #include "ext/standard/php_string.h"
 #include "ext/standard/info.h"
 #include "ext/standard/php_math.h"
-#include "ext/gd/php_gd.h"           // for php_gd_libgdimageptr_from_zval_p() and gd_image_ce
-#include "ext/gd/gd.h"               // for gdImagePtr, gdTrueColorGetRed, etc.
 
 #ifdef HAVE_PRINTER
 
@@ -1769,16 +1767,17 @@ ZEND_FUNCTION(printer_draw_bmp)
 
 PHP_FUNCTION(printer_draw_image)
 {
-    zval *printer_zval;
-    zval *image_zval;
+    zval *printer_res;
+    zval *image_res;
     zend_long x, y;
     zend_long width = 0, height = 0;
     printer *resource;
-    gdImagePtr im;
+    gdImagePtr im = NULL;
+    static int gd_resource_type = -1;  // Cache the type ID
 
     ZEND_PARSE_PARAMETERS_START(4, 6)
-        Z_PARAM_ZVAL(printer_zval)           // or Z_PARAM_RESOURCE if still resource
-        Z_PARAM_OBJECT_OF_CLASS(image_zval, gd_image_ce)
+        Z_PARAM_RESOURCE(printer_res)
+        Z_PARAM_RESOURCE(image_res)
         Z_PARAM_LONG(x)
         Z_PARAM_LONG(y)
         Z_PARAM_OPTIONAL
@@ -1786,35 +1785,44 @@ PHP_FUNCTION(printer_draw_image)
         Z_PARAM_LONG(height)
     ZEND_PARSE_PARAMETERS_END();
 
-    // Get printer resource (adjust if you modernized printer to object)
-    resource = zend_fetch_resource(Z_RES_P(printer_zval), "Printer Handle", le_printer);
+    resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
     if (!resource) {
         php_error_docref(NULL, E_WARNING, "Invalid printer resource");
         RETURN_FALSE;
     }
 
     if (resource->dc == NULL) {
-        php_error_docref(NULL, E_WARNING, "No DeviceContext available to draw image");
+        php_error_docref(NULL, E_WARNING, "No DeviceContext available");
         RETURN_FALSE;
     }
 
-    // Get gdImagePtr from the GdImage object
-    im = php_gd_libgdimageptr_from_zval_p(image_zval);
+    // One-time detection of GD resource type
+    if (gd_resource_type == -1) {
+        zend_resource *zr = Z_RES_P(image_res);
+        if (zr && strcmp(zr->type_name, "GD Image") == 0) {  // PHP 7 only field!
+            gd_resource_type = zr->type;
+        } else {
+            php_error_docref(NULL, E_WARNING, "GD not loaded or incompatible resource passed");
+            RETURN_FALSE;
+        }
+    }
+
+    // Fetch the gdImagePtr
+    im = (gdImagePtr) zend_fetch_resource(Z_RES_P(image_res), "GD Image", gd_resource_type);
     if (!im) {
-        php_error_docref(NULL, E_WARNING, "Failed to get internal GD image pointer");
+        php_error_docref(NULL, E_WARNING, "Invalid or incompatible GD image resource");
         RETURN_FALSE;
     }
 
-    // Optional size validation
-    if (im->sx <= 0 || im->sy <= 0) {
-        php_error_docref(NULL, E_WARNING, "Invalid GD image dimensions");
+    int target_w = (width > 0)  ? (int)width  : im->sx;
+    int target_h = (height > 0) ? (int)height : im->sy;
+
+    if (target_w <= 0 || target_h <= 0) {
+        php_error_docref(NULL, E_WARNING, "Invalid target dimensions");
         RETURN_FALSE;
     }
 
-    int target_width  = (width > 0)  ? (int)width  : im->sx;
-    int target_height = (height > 0) ? (int)height : im->sy;
-
-    // Drawing loop (truecolor or palette) - same as before
+    // Drawing (truecolor branch)
     if (im->trueColor) {
         for (int py = 0; py < im->sy; py++) {
             for (int px = 0; px < im->sx; px++) {
@@ -1823,13 +1831,14 @@ PHP_FUNCTION(printer_draw_image)
                 int g = gdTrueColorGetGreen(color);
                 int b = gdTrueColorGetBlue(color);
 
-                int screen_x = (int)x + (px * target_width / im->sx);
-                int screen_y = (int)y + (py * target_height / im->sy);
+                int dest_x = (int)x + (int)((double)px * target_w / im->sx);
+                int dest_y = (int)y + (int)((double)py * target_h / im->sy);
 
-                SetPixel(resource->dc, screen_x, screen_y, RGB(r, g, b));
+                SetPixel(resource->dc, dest_x, dest_y, RGB(r, g, b));
             }
         }
     } else {
+        // Palette branch (similar, using im->pixels, im->red/green/blue arrays)
         for (int py = 0; py < im->sy; py++) {
             for (int px = 0; px < im->sx; px++) {
                 int idx = im->pixels[py][px];
@@ -1837,10 +1846,10 @@ PHP_FUNCTION(printer_draw_image)
                 int g = im->green[idx];
                 int b = im->blue[idx];
 
-                int screen_x = (int)x + (px * target_width / im->sx);
-                int screen_y = (int)y + (py * target_height / im->sy);
+                int dest_x = (int)x + (int)((double)px * target_w / im->sx);
+                int dest_y = (int)y + (int)((double)py * target_h / im->sy);
 
-                SetPixel(resource->dc, screen_x, screen_y, RGB(r, g, b));
+                SetPixel(resource->dc, dest_x, dest_y, RGB(r, g, b));
             }
         }
     }
