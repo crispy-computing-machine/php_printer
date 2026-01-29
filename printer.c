@@ -1768,6 +1768,7 @@ ZEND_FUNCTION(printer_draw_bmp)
 
 PHP_FUNCTION(printer_draw_image)
 {
+    zval *IM;
     zval *printer_res;
     gdImagePtr image_zval;
     zend_long x, y, width = 0, height = 0;
