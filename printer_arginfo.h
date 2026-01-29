@@ -215,8 +215,8 @@ ZEND_END_ARG_INFO()
 
 /* @return bool */
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_printer_draw_image, 0, 4, IS_TRUE, 0)
-    ZEND_ARG_TYPE_INFO(0, printer, IS_RESOURCE, 0)      // printer resource
-    ZEND_ARG_TYPE_INFO(0, image, IS_RESOURCE, 0)        // GD image resource
+    ZEND_ARG_TYPE_INFO(0, printer, IS_RESOURCE, 0)
+    ZEND_ARG_OBJ_INFO(0, image, GdImage, 0)             // <-- GdImage object
     ZEND_ARG_TYPE_INFO(0, x, IS_LONG, 0)
     ZEND_ARG_TYPE_INFO(0, y, IS_LONG, 0)
     ZEND_ARG_TYPE_INFO(0, width, IS_LONG, 0)
