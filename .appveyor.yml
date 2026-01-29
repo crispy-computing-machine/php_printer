@@ -26,26 +26,23 @@ install:
     $dname1 = 'php-sdk-' + $env:BIN_SDK_VER
     if (-not (Test-Path c:\build-cache\$dname1)) {
             7z x c:\build-cache\$bname -oc:\build-cache
+            # Sleep 5 seconds (process cannot access the file)
             Start-Sleep -s 5
             move c:\build-cache\$dname0 c:\build-cache\$dname1
     }
 
-    # === NEW: Activate Visual Studio environment so cl.exe is available for phpsdk_deps ===
-    echo "Activating VS environment"
-    & "c:\build-cache\$dname1\phpsdk-$($env:VC)-$($env:ARCH).bat"
-
     echo "Copy GIT files to SRC build directory"
     xcopy c:\projects\php_printer C:\projects\php-src\ext\php_printer\ /s /e /y /f
 
-    # === Prepare dependencies ===
+    # === UPDATED: Prepare dependencies using phpsdk_deps with explicit branch ===
     echo "Preparing dependencies directory"
     $depsDir = "C:\projects\php-src\deps"
     if (-not (Test-Path $depsDir)) {
         mkdir $depsDir
     }
     cd C:\projects\php-src
-    # Explicit branch + arch; environment is now set so cl.exe detection works
-    & "c:\build-cache\$dname1\bin\phpsdk_deps.bat" --update --force --branch 8.4 --arch x64 -d $depsDir
+    # Quote path + add --branch 8.4 to avoid auto-detection failure
+    & "c:\build-cache\$dname1\bin\phpsdk_deps.bat" -u --force --branch 8.4 -d $depsDir
     cd C:\projects\php_printer
 
 cache:
@@ -79,6 +76,9 @@ build_script:
     $dname1 = 'php-' + $env:PHP_VER + $ts_part + '-devel-' + $env:VC.toUpper() + '-' + $env:ARCH
     if (-not (Test-Path c:\build-cache\$dname1)) {
             7z x c:\build-cache\$bname -oc:\build-cache
+            # Same directory??? (comment kept as-is)
+            #echo Moving c:\build-cache\$dname0 to c:\build-cache\$dname1
+            #move c:\build-cache\$dname0 c:\build-cache\$dname1
     }
 
     echo "Main build process..."
@@ -88,6 +88,9 @@ build_script:
     echo "" | Out-File -Encoding "ASCII" task.bat
     echo "call phpize 2>&1" | Out-File -Encoding "ASCII" -Append task.bat
 
+    # === REMOVED: buildconf.bat call - not needed (phpize already handles configure regeneration) ===
+
+    # === (unchanged) use --with-php-build=deps ===
     $conf_cmd = 'call configure --enable-printer=shared --enable-debug --with-php-build=deps 2>&1'
     echo $conf_cmd | Out-File -Encoding "ASCII" -Append task.bat
     echo "nmake /nologo 2>&1" | Out-File -Encoding "ASCII" -Append task.bat
