@@ -247,38 +247,6 @@ PHP_MINIT_FUNCTION(printer)
 	REGP_CONSTANT("PRINTER_ENUM_NETWORK",		PRINTER_ENUM_NETWORK);
 	REGP_CONSTANT("PRINTER_ENUM_REMOTE",		PRINTER_ENUM_REMOTE);
 
-    // Your existing init code here (e.g., registering constants or INI entries)
-
-    // New: Detect GD resource type
-    zval func_name, retval, params[2];
-    ZVAL_STRING(&func_name, "imagecreatetruecolor");
-    ZVAL_LONG(&params[0], 1);  // width
-    ZVAL_LONG(&params[1], 1);  // height
-
-    if (call_user_function(NULL, NULL, &func_name, &retval, 2, params) == SUCCESS &&
-        Z_TYPE(retval) == IS_RESOURCE) {
-
-        le_gd = Z_RES(retval)->type;  // Save type ID (PHP 7/8 compatible)
-
-        // Clean up temp image
-        zval destroy_func, destroy_params[1], destroy_retval;
-        ZVAL_STRING(&destroy_func, "imagedestroy");
-        ZVAL_COPY(&destroy_params[0], &retval);
-        call_user_function(NULL, NULL, &destroy_func, &destroy_retval, 1, destroy_params);
-
-        zval_ptr_dtor(&destroy_func);
-        zval_ptr_dtor(&destroy_retval);
-    } else {
-        le_gd = -1;  // GD not available
-    }
-
-    zval_ptr_dtor(&func_name);
-    zval_ptr_dtor(&retval);
-
-    if (le_gd == -1) {
-        php_error_docref(NULL, E_NOTICE, "GD extension not loaded - GD features in printer disabled");
-    }
-
 	return SUCCESS;
 }
 
