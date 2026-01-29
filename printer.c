@@ -1767,16 +1767,17 @@ ZEND_FUNCTION(printer_draw_bmp)
 
 PHP_FUNCTION(printer_draw_image)
 {
-zval *printer_res;
-    zval *image_arg;   // generic zval
+    zval *printer_res;
+    zval *image_res;
     zend_long x, y;
     zend_long width = 0, height = 0;
     printer *resource;
+    static int gd_resource_type = -1;  // Cache the type ID
     gdImagePtr im = NULL;
 
     ZEND_PARSE_PARAMETERS_START(4, 6)
         Z_PARAM_RESOURCE(printer_res)
-        Z_PARAM_ZVAL(image_arg)                         // ← generic
+        Z_PARAM_RESOURCE(image_res)
         Z_PARAM_LONG(x)
         Z_PARAM_LONG(y)
         Z_PARAM_OPTIONAL
@@ -1790,42 +1791,27 @@ zval *printer_res;
         RETURN_FALSE;
     }
 
-    zend_resource *res = NULL;
-
-    if (Z_TYPE_P(image_arg) == IS_OBJECT) {
-        // PHP 8+: GdImage object
-        zend_class_entry *gd_ce = zend_hash_str_find_ptr(EG(class_table), "gdimage", 7);
-        if (!gd_ce || !instanceof_function(Z_OBJCE_P(image_arg), gd_ce)) {
-            php_error_docref(NULL, E_WARNING, "Argument #2 must be GdImage object or GD resource");
-            RETURN_FALSE;
-        }
-
-        // Critical: Get the internal resource handle from the object
-        // GdImage object stores the zend_resource* internally (offset 0 in most builds)
-        // This is fragile but common in extensions until official API exists
-        res = *(zend_resource**)Z_OBJ_P(image_arg)->handle;
-        if (!res || res->type != zend_hash_str_find_ptr(EG(resource_list), "gd", 2)->type) {
-            php_error_docref(NULL, E_WARNING, "Invalid GdImage internal resource");
-            RETURN_FALSE;
-        }
-    } else if (Z_TYPE_P(image_arg) == IS_RESOURCE) {
-        // PHP 7 or legacy
-        res = Z_RES_P(image_arg);
-    } else {
-        php_error_docref(NULL, E_WARNING, "Argument #2 must be GdImage or resource");
-        RETURN_FALSE;
-    }
-
-    // Now fetch the pointer using the resource
-    im = (gdImagePtr) zend_fetch_resource(res, "GD Image", -1);  // -1 = skip name check
+    // Get gdImagePtr – use "GD Image" literal
+    im = (gdImagePtr) zend_fetch_resource(Z_RES_P(image_res), "GD Image", -1);  // -1 = don't check type name
     if (!im) {
-        php_error_docref(NULL, E_WARNING, "Failed to fetch GD image pointer");
+        php_error_docref(NULL, E_WARNING, "Invalid GD image (ensure GD loaded)");
         RETURN_FALSE;
     }
 
-    // Proceed with drawing...
-    int target_width  = (width > 0)  ? (int)width  : im->sx;
-    int target_height = (height > 0) ? (int)height : im->sy;
+    // One-time detection of GD resource type
+    if (gd_resource_type == -1) {
+        gd_resource_type = Z_RES_P(image_res)->type;
+    }
+
+    // Fetch the gdImagePtr
+    im = (gdImagePtr) zend_fetch_resource(Z_RES_P(image_res), "GD Image", gd_resource_type);
+    if (!im) {
+        php_error_docref(NULL, E_WARNING, "Invalid or incompatible GD image resource");
+        RETURN_FALSE;
+    }
+
+    int target_w = (width > 0)  ? (int)width  : im->sx;
+    int target_h = (height > 0) ? (int)height : im->sy;
 
     if (target_w <= 0 || target_h <= 0) {
         php_error_docref(NULL, E_WARNING, "Invalid target dimensions");
