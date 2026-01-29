@@ -6,6 +6,14 @@ ARG_ENABLE("printer", "Printer Support", "no");
 if (PHP_PRINTER == "yes") {
 	CHECK_LIB('winspool.lib', 'printer');
 	CHECK_LIB('gdi32.lib', 'printer');
+    if (CHECK_LIB("gd.lib", "gd", PHP_PHP_BUILD + "\\lib") &&
+        CHECK_HEADER_ADD_INCLUDE("gd.h", "CFLAGS_PRINTER")) {
+        // Enable feature
+        AC_DEFINE('HAVE_PRINTER_GD', 1, 'GD support in printer');
+        // Add sources that use GD if separate
+    } else {
+        WARNING("GD not found - printer GD features disabled");
+    }
 	EXTENSION("printer", "printer.c");
 	AC_DEFINE('HAVE_PRINTER', 1, 'Have Printer support', false);
 }

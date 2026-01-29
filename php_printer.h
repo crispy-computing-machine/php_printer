@@ -27,43 +27,15 @@
 #if HAVE_PRINTER
 #include <Winspool.h>
 #include "zend_list.h" // Explicitly include
+#include <gd.h>
 #include "printer_arginfo.h" // Explicitly include
 extern zend_module_entry printer_module_entry;
 #define printer_module_ptr &printer_module_entry
+
 #define PHP_PRINTER_VERSION "0.1.0-dev"
 
-PHP_MINIT_FUNCTION(printer)
-{
-   zval func_name, retval, params[2];
-   ZVAL_STRING(&func_name, "imagecreatetruecolor");
-
-   ZVAL_LONG(&params[0], 1);  // width
-   ZVAL_LONG(&params[1], 1);  // height
-
-   if (call_user_function(NULL, NULL, &func_name, &retval, 2, params) == SUCCESS
-       && Z_TYPE(retval) == IS_RESOURCE) {
-
-       le_gd = Z_RESVAL(retval)->type;  // Save the resource type ID
-
-       // Clean up the temporary image
-       zval destroy_func, destroy_params[1], destroy_retval;
-       ZVAL_STRING(&destroy_func, "imagedestroy");
-       ZVAL_COPY_VALUE(&destroy_params[0], &retval);
-       call_user_function(NULL, NULL, &destroy_func, &destroy_retval, 1, destroy_params);
-
-       zval_ptr_dtor(&destroy_func);
-       zval_ptr_dtor(&destroy_retval);
-   }
-
-   zval_ptr_dtor(&func_name);
-   zval_ptr_dtor(&retval);
-}
-if (le_gd == -1) {
-   php_printf("Warning: GD extension not loaded - printer GD features disabled\n");
-}
-
-
-PHP_MINFO_FUNCTION(printer);    // Try to detect GD resource type by creating a temporary image
+PHP_MINIT_FUNCTION(printer);
+PHP_MINFO_FUNCTION(printer);
 PHP_MSHUTDOWN_FUNCTION(printer);
 
 ZEND_FUNCTION(printer_open);
@@ -96,7 +68,6 @@ ZEND_FUNCTION(printer_draw_line);
 ZEND_FUNCTION(printer_draw_chord);
 ZEND_FUNCTION(printer_draw_pie);
 ZEND_FUNCTION(printer_draw_bmp);
-ZEND_FUNCTION(printer_draw_image);
 ZEND_FUNCTION(printer_abort);
 
 typedef struct _printer {
@@ -108,7 +79,6 @@ typedef struct _printer {
     char *name;
     DWORD dmModifiedFields;
 } printer;
-
 
 ZEND_BEGIN_MODULE_GLOBALS(printer)
 	char *default_printer;
