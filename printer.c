@@ -36,14 +36,14 @@
 
 static int le_printer, le_brush, le_pen, le_font;
 
+static int le_gd = -1;  /* GD resource type ID */
+
 #ifdef PHP_WIN32
 #include <windows.h>
 #include <wingdi.h>
 #include <winspool.h>
 
 #include "php_printer.h"
-
-
 
 COLORREF hex_to_rgb(char * hex);
 char *rgb_to_hex(COLORREF rgb);
