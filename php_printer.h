@@ -109,6 +109,56 @@ typedef struct _printer {
     DWORD dmModifiedFields;
 } printer;
 
+typedef struct gdImageStruct {
+    unsigned char **pixels;
+    int sx;
+    int sy;
+    int colorsTotal;
+    int red[256];
+    int green[256];
+    int blue[256];
+    int open[256];
+    int transparent;
+    int *polyInts;
+    int polyAllocated;
+    struct gdImageStruct *brush;
+    struct gdImageStruct *tile;
+    int brushColorMap[256];
+    int tileColorMap[256];
+    int styleLength;
+    int stylePos;
+    int *style;
+    int interlace;
+    int thick;
+    int alpha[256];
+    int trueColor;
+    int **tpixels;
+    int alphaBlendingFlag;
+    int saveAlphaFlag;
+    int AA;
+    int AA_color;
+    int AA_dont_blend;
+    int cx1;
+    int cy1;
+    int cx2;
+    int cy2;
+    int res_x;
+    int res_y;
+    int paletteQuantizationMethod;
+    int paletteQuantizationSpeed;
+    int paletteQuantizationMinQuality;
+    int paletteQuantizationMaxQuality;
+    int interpolation_id;
+    // interpolation_method interpolation; // Skip if not needed
+    int AALevel;
+    void *fontCache; // gdFontPtr
+} *gdImagePtr;
+
+// Macros if needed (from gd.h)
+#define gdTrueColorGetAlpha(c) (((c) & 0x7F000000) >> 24)
+#define gdTrueColorGetRed(c) (((c) & 0xFF0000) >> 16)
+#define gdTrueColorGetGreen(c) (((c) & 0x00FF00) >> 8)
+#define gdTrueColorGetBlue(c) ((c) & 0x0000FF)
 
 ZEND_BEGIN_MODULE_GLOBALS(printer)
 	char *default_printer;
