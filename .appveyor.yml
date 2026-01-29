@@ -9,7 +9,6 @@ clone_folder: c:\projects\php_printer
 
 install:
   ps: |
-
     echo "Build cache directory c:\build-cache"
     if (-not (Test-Path c:\build-cache)) {
         mkdir c:\build-cache
@@ -29,6 +28,9 @@ install:
         Start-Sleep -s 5
         move c:\build-cache\$dname0 c:\build-cache\$dname1
     }
+
+    # Activate VS environment early (needed for buildconf and configure)
+    & "c:\build-cache\$dname1\phpsdk-$($env:VC)-$($env:ARCH).bat"
 
     # Download full PHP source
     echo "Downloading full PHP source for $($env:PHP_VER)"
@@ -61,45 +63,44 @@ environment:
 
 build_script:
   ps: |
-    $runner = 'c:\build-cache\php-sdk-' + $env:BIN_SDK_VER + '\phpsdk' + '-' + $env:VC + '-' + $env:ARCH + '.bat'
-    $ts_part = if ($env:TS -eq '1') { 'ts' } else { '-nts' }
-
-    # Prepare deps in full source tree
-    echo "Preparing dependencies"
     cd C:\projects\php-src
-    echo "" | Out-File -Encoding "ASCII" deps_task.bat
-    echo "bin\phpsdk_deps --update --force --branch 8.4 --arch x64 -d deps" | Out-File -Encoding "ASCII" -Append deps_task.bat
-    & $runner -t deps_task.bat
 
-    # Buildconf
     echo "Running buildconf"
     .\buildconf.bat --force
 
-    # Configure
-    echo "Configuring PHP"
-    $ts_flag = if ($env:TS -eq '1') { '--enable-zts' } else { '--disable-zts' }
-    $conf_cmd = "configure $ts_flag --enable-debug --enable-gd=shared --enable-printer=shared --with-php-build=deps"
-    echo "" | Out-File -Encoding "ASCII" task.bat
-    echo $conf_cmd | Out-File -Encoding "ASCII" -Append task.bat
-    echo "nmake /nologo" | Out-File -Encoding "ASCII" -Append task.bat
-    echo "exit %errorlevel%" | Out-File -Encoding "ASCII" -Append task.bat
-    & $runner -t task.bat
+    echo "Configuring PHP with GD and printer extension"
+    $ts_flag = if ($env:TS -eq '1') { '--enable-zts' } else { '' }
+    $configure_args = "--disable-all --enable-cli $ts_flag --enable-gd=shared --enable-printer=shared --with-php-build=deps"
+    echo "configure args: $configure_args"
+    .\configure.bat $configure_args
+
+    echo "Building PHP (this may take a while)"
+    nmake
+
+    # The extension dll should now exist
+    $dll_path = ".\x64\Release_TS\php_printer.dll"
+    if ($env:ARCH -eq "x86") { $dll_path = ".\Release\php_printer.dll" }
+    if (-not (Test-Path $dll_path)) {
+        Write-Error "php_printer.dll not found after build"
+        exit 1
+    }
+
+    echo "Build successful. DLL: $dll_path"
 
 after_build:
   ps: |
+    cd C:\projects\php-src
 
-    echo "Build download archive of build extension and save as artifact..."
-    $ts_part = 'ts'
-    if ('0' -eq $env:TS) { $ts_part = '-nts' }
+    $ts_part = if ($env:TS -eq '1') { 'ts' } else { '-nts' }
     $zip_bname = 'php_printer-' + $env:APPVEYOR_REPO_COMMIT.substring(0, 8) + '-' + $env:PHP_VER.substring(0, 3) + '-' + $ts_part + '-' + $env:VC + '-' + $env:ARCH + '.zip'
-    $dir = 'c:\projects\php-src\';
-    if ('x64' -eq $env:ARCH) { $dir = $dir + 'x64\' }
-    $dir = $dir + 'Release'
-    if ('1' -eq $env:TS) { $dir = $dir + '_TS' }
-    & 7z a c:\$zip_bname $dir\php_printer.dll
+
+    $dll_path = ".\x64\Release_TS\php_printer.dll"
+    if ($env:ARCH -eq "x86") { $dll_path = ".\Release\php_printer.dll" }
+
+    & 7z a c:\$zip_bname $dll_path
     Push-AppveyorArtifact c:\$zip_bname
 
 test_script:
   ps: |
-
     echo "Start tests..."
+    # Add your test commands here if you have any
