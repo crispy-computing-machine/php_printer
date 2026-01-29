@@ -1786,13 +1786,15 @@ PHP_FUNCTION(printer_draw_image)
     ZEND_PARSE_PARAMETERS_END();
 
     resource = zend_fetch_resource(Z_RES_P(printer_res), "Printer Handle", le_printer);
-    if (!resource) {
-        php_error_docref(NULL, E_WARNING, "Invalid printer resource");
+    if (!resource || resource->dc == NULL) {
+        php_error_docref(NULL, E_WARNING, "Invalid printer or no DC");
         RETURN_FALSE;
     }
 
-    if (resource->dc == NULL) {
-        php_error_docref(NULL, E_WARNING, "No DeviceContext available");
+    // Get gdImagePtr – use "GD Image" literal
+    im = (gdImagePtr) zend_fetch_resource(Z_RES_P(image_res), "GD Image", -1);  // -1 = don't check type name
+    if (!im) {
+        php_error_docref(NULL, E_WARNING, "Invalid GD image (ensure GD loaded)");
         RETURN_FALSE;
     }
 
