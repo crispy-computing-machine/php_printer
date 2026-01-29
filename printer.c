@@ -30,7 +30,8 @@
 #include "ext/standard/php_string.h"
 #include "ext/standard/info.h"
 #include "ext/standard/php_math.h"
-
+#include "ext/gd/php_gd.h"           // for php_gd_libgdimageptr_from_zval_p() and gd_image_ce
+#include "ext/gd/gd.h"               // for gdImagePtr, gdTrueColorGetRed, etc.
 
 #ifdef HAVE_PRINTER
 
