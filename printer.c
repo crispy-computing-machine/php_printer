@@ -1798,7 +1798,13 @@ PHP_FUNCTION(printer_draw_image)
 
     // One-time detection of GD resource type
     if (gd_resource_type == -1) {
-        gd_resource_type = Z_RES_P(image_res)->type;
+        zend_resource *zr = Z_RES_P(image_res);
+        if (zr && strcmp(zr->type_name, "GD Image") == 0) {  // PHP 7 only field!
+            gd_resource_type = zr->type;
+        } else {
+            php_error_docref(NULL, E_WARNING, "GD not loaded or incompatible resource passed");
+            RETURN_FALSE;
+        }
     }
 
     // Fetch the gdImagePtr
