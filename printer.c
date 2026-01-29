@@ -1794,34 +1794,23 @@ PHP_FUNCTION(printer_draw_image)
         RETURN_FALSE;
     }
 
-    // Lazy GD type detection
+    // Lazy detection of GD type on first call
     if (le_gd == -1) {
-        zval func_name, retval, params[1];
-        ZVAL_STRING(&func_name, "get_resource_type");
-        ZVAL_COPY(&params[0], image_zval);
-
-        zend_result call_result = call_user_function(NULL, NULL, &func_name, &retval, 1, params);
-
-        if (call_result == SUCCESS && Z_TYPE(retval) == IS_STRING &&
-            Z_STRLEN(retval) == 8 && memcmp(Z_STRVAL(retval), "GD Image", 8) == 0) {
-
-            zend_resource *res = Z_RES_P(image_zval);
-            le_gd = res->type;  // Numeric type ID
+        // Try to get the resource type from an actual GD resource
+        // (We assume the passed image_zval is valid GD if GD is loaded)
+        zend_resource *res = Z_RES_P(image_zval);
+        if (res && strcmp(res->type_name, "GD Image") == 0) {
+            le_gd = res->type;
         } else {
-            php_error_docref(NULL, E_WARNING, "The provided resource is not a valid GD image (GD may not be loaded)");
-            zval_ptr_dtor(&func_name);
-            zval_ptr_dtor(&retval);
+            php_error_docref(NULL, E_WARNING, "GD extension appears not loaded or incompatible - cannot process GD image");
             RETURN_FALSE;
         }
-
-        zval_ptr_dtor(&func_name);
-        zval_ptr_dtor(&retval);
     }
 
-    // Proceed with fetch
+    // Now fetch using the type we just learned (or previously learned)
     im = (gdImagePtr) zend_fetch_resource(Z_RES_P(image_zval), "GD Image", le_gd);
     if (!im) {
-        php_error_docref(NULL, E_WARNING, "Failed to fetch GD image resource");
+        php_error_docref(NULL, E_WARNING, "Invalid GD image resource");
         RETURN_FALSE;
     }
 
