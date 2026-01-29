@@ -5,54 +5,55 @@ branches:
   only:
     - develop
 
-clone_folder:  c:\projects\php_printer
+clone_folder: c:\projects\php_printer
 
 install:
   ps: |
-
     echo "Build cache directory c:\build-cache"
     if (-not (Test-Path c:\build-cache)) {
-            mkdir c:\build-cache
+        mkdir c:\build-cache
     }
 
-    echo "Download PHP 8 binary tools"
+    echo "Download PHP SDK binary tools"
     $bname = 'php-sdk-binary-tools-php-sdk-' + $env:BIN_SDK_VER + '.zip'
     $bpath = 'php-sdk-' + $env:BIN_SDK_VER
     echo "Downloading: https://github.com/php/php-sdk-binary-tools/releases/download/$bpath/$bname"
     if (-not (Test-Path c:\build-cache\$bname)) {
-            Invoke-WebRequest "https://github.com/php/php-sdk-binary-tools/releases/download/$bpath/$bname" -OutFile "c:\build-cache\$bname"
+        Invoke-WebRequest "https://github.com/php/php-sdk-binary-tools/releases/download/$bpath/$bname" -OutFile "c:\build-cache\$bname"
     }
     $dname0 = 'php-sdk-binary-tools-php-sdk-' + $env:BIN_SDK_VER
     $dname1 = 'php-sdk-' + $env:BIN_SDK_VER
     if (-not (Test-Path c:\build-cache\$dname1)) {
-            7z x c:\build-cache\$bname -oc:\build-cache
-            Start-Sleep -s 5
-            move c:\build-cache\$dname0 c:\build-cache\$dname1
+        7z x c:\build-cache\$bname -oc:\build-cache
+        Start-Sleep -s 5
+        move c:\build-cache\$dname0 c:\build-cache\$dname1
     }
 
-    echo "Copy GIT files to SRC build directory"
-    xcopy c:\projects\php_printer C:\projects\php-src\ext\php_printer\ /s /e /y /f
+    # Activate VS environment early (needed for buildconf and configure)
+    & "c:\build-cache\$dname1\phpsdk-$($env:VC)-$($env:ARCH).bat"
 
-    # === Prepare dependencies using phpsdk_deps in activated env ===
-    echo "Preparing dependencies directory"
-    $depsDir = "C:\projects\php-src\deps"
-    if (-not (Test-Path $depsDir)) {
-        mkdir $depsDir
+    # Download full PHP source
+    echo "Downloading full PHP source for $($env:PHP_VER)"
+    $src_zip = "php-src-php-$($env:PHP_VER).zip"
+    $src_url = "https://github.com/php/php-src/archive/refs/tags/php-$($env:PHP_VER).zip"
+    if (-not (Test-Path c:\build-cache\$src_zip)) {
+        Invoke-WebRequest $src_url -OutFile "c:\build-cache\$src_zip"
     }
-    $runner = 'c:\build-cache\php-sdk-' + $env:BIN_SDK_VER + '\phpsdk' + '-' + $env:VC + '-' + $env:ARCH + '.bat'
-    cd C:\projects\php-src
-    echo "" | Out-File -Encoding "ASCII" deps_task.bat
-    echo "call phpsdk_deps.bat --update --force --branch 8.4 --arch x64 -d deps 2>&1" | Out-File -Encoding "ASCII" -Append deps_task.bat
-    & $runner -t deps_task.bat
-    cd C:\projects\php_printer
+    if (-not (Test-Path c:\projects\php-src)) {
+        7z x c:\build-cache\$src_zip -oC:\projects\
+        move C:\projects\php-src-php-* C:\projects\php-src
+    }
+
+    # Copy your extension into the source tree
+    echo "Copy extension to php-src\ext\printer"
+    xcopy c:\projects\php_printer C:\projects\php-src\ext\printer\ /s /e /y /f /i
 
 cache:
   c:\build-cache -> .appveyor.yml
-  c:\projects\php-src\deps -> .appveyor.yml
+  c:\projects\php-src -> .appveyor.yml
 
 environment:
   BIN_SDK_VER: 2.3.0
-  PTHREADS_VER: 2.9.1
   matrix:
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2022
       ARCH: x64
@@ -62,58 +63,44 @@ environment:
 
 build_script:
   ps: |
+    cd C:\projects\php-src
 
-    $ts_part = ''
-    if ('0' -eq $env:TS) { $ts_part = '-nts' }
-    $bname = 'php-devel-pack-' + $env:PHP_VER + $ts_part + '-Win32-' + $env:VC.toUpper() + '-' + $env:ARCH + '.zip'
-    echo "Download PHP8 development pack from release https://downloads.brittainmedia.co.uk/$bname"
-    if (-not (Test-Path c:\build-cache\$bname)) {
-            Invoke-WebRequest "https://downloads.brittainmedia.co.uk/$bname" -OutFile "c:\build-cache\$bname" -UserAgent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0'
-            if (-not (Test-Path c:\build-cache\$bname)) {
-                    Invoke-WebRequest "https://downloads.brittainmedia.co.uk/$bname" -OutFile "c:\build-cache\$bname" -UserAgent 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0'
-            }
+    echo "Running buildconf"
+    .\buildconf.bat --force
+
+    echo "Configuring PHP with GD and printer extension"
+    $ts_flag = if ($env:TS -eq '1') { '--enable-zts' } else { '' }
+    $configure_args = "--disable-all --enable-cli $ts_flag --enable-gd=shared --enable-printer=shared --with-php-build=deps"
+    echo "configure args: $configure_args"
+    .\configure.bat $configure_args
+
+    echo "Building PHP (this may take a while)"
+    nmake
+
+    # The extension dll should now exist
+    $dll_path = ".\x64\Release_TS\php_printer.dll"
+    if ($env:ARCH -eq "x86") { $dll_path = ".\Release\php_printer.dll" }
+    if (-not (Test-Path $dll_path)) {
+        Write-Error "php_printer.dll not found after build"
+        exit 1
     }
-    
-    $dname0 = 'php-' + $env:PHP_VER + '-devel-' + $env:VC.toUpper() + '-' + $env:ARCH
-    $dname1 = 'php-' + $env:PHP_VER + $ts_part + '-devel-' + $env:VC.toUpper() + '-' + $env:ARCH
-    if (-not (Test-Path c:\build-cache\$dname1)) {
-            7z x c:\build-cache\$bname -oc:\build-cache
-            # Same directory??? (comment kept as-is)
-            #echo Moving c:\build-cache\$dname0 to c:\build-cache\$dname1
-            #move c:\build-cache\$dname0 c:\build-cache\$dname1
-    }
 
-    echo "Main build process..."
-    cd c:\projects\php_printer
-    
-    $env:PATH = 'c:\build-cache\' + $dname1 + ';' + $env:PATH
-    echo "" | Out-File -Encoding "ASCII" task.bat
-    echo "call phpize 2>&1" | Out-File -Encoding "ASCII" -Append task.bat
-
-    $conf_cmd = 'call configure --enable-printer=shared --enable-gd --enable-debug --with-php-build=deps 2>&1'
-    echo $conf_cmd | Out-File -Encoding "ASCII" -Append task.bat
-    echo "nmake /nologo 2>&1" | Out-File -Encoding "ASCII" -Append task.bat
-    echo "exit %errorlevel%" | Out-File -Encoding "ASCII" -Append task.bat
-    $here = (Get-Item -Path "." -Verbose).FullName
-    $runner = 'c:\build-cache\php-sdk-' + $env:BIN_SDK_VER + '\phpsdk' + '-' + $env:VC + '-' + $env:ARCH + '.bat'
-    $task = $here + '\task.bat'
-    & $runner -t $task
+    echo "Build successful. DLL: $dll_path"
 
 after_build:
   ps: |
+    cd C:\projects\php-src
 
-    echo "Build download archive of build extension and save as artifact..."
-    $ts_part = 'ts'
-    if ('0' -eq $env:TS) { $ts_part = '-nts' }
+    $ts_part = if ($env:TS -eq '1') { 'ts' } else { '-nts' }
     $zip_bname = 'php_printer-' + $env:APPVEYOR_REPO_COMMIT.substring(0, 8) + '-' + $env:PHP_VER.substring(0, 3) + '-' + $ts_part + '-' + $env:VC + '-' + $env:ARCH + '.zip'
-    $dir = 'c:\projects\php_printer\';
-    if ('x64' -eq $env:ARCH) { $dir = $dir + 'x64\' }
-    $dir = $dir + 'Release'
-    if ('1' -eq $env:TS) { $dir = $dir + '_TS' }
-    & 7z a c:\$zip_bname $dir\php_printer.dll
+
+    $dll_path = ".\x64\Release_TS\php_printer.dll"
+    if ($env:ARCH -eq "x86") { $dll_path = ".\Release\php_printer.dll" }
+
+    & 7z a c:\$zip_bname $dll_path
     Push-AppveyorArtifact c:\$zip_bname
 
 test_script:
   ps: |
-
     echo "Start tests..."
+    # Add your test commands here if you have any
