@@ -32,14 +32,14 @@ install:
 
     # Download full PHP 8.4.17 source
     echo "Downloading full PHP 8.4.17 source"
-    $src_zip = "php-src-PHP-8.4.17.zip"
-    $src_url = "https://github.com/php/php-src/archive/refs/tags/PHP-8.4.17.zip"
+    $src_zip = "php-src-php-8.4.17.zip"
+    $src_url = "https://github.com/php/php-src/archive/refs/tags/php-8.4.17.zip"
     if (-not (Test-Path c:\build-cache\$src_zip)) {
         Invoke-WebRequest $src_url -OutFile "c:\build-cache\$src_zip"
     }
     if (-not (Test-Path c:\projects\php-src)) {
         7z x c:\build-cache\$src_zip -oC:\projects\
-        move C:\projects\php-src-PHP-8.4.17 C:\projects\php-src
+        move C:\projects\php-src-php-8.4.17 C:\projects\php-src
     }
 
     # Copy your extension into the source tree
@@ -62,7 +62,7 @@ environment:
 build_script:
   ps: |
 
-    # Register JScript engine (helps with configure.js)
+    # Register JScript engine (helps with configure.js errors)
     regsvr32 /s jscript.dll
 
     $runner = 'c:\build-cache\php-sdk-' + $env:BIN_SDK_VER + '\phpsdk' + '-' + $env:VC + '-' + $env:ARCH + '.bat'
